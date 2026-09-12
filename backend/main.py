@@ -146,11 +146,30 @@ class JobPosting(APIModel):
     error: str | None
 
 
+class JobSpec(APIModel):
+    model_config = ConfigDict(extra="allow")
+
+    title: str
+    url: str
+    company: str
+    category: str
+    employment_type: str | None
+    description: str
+    requirements: list[str]
+    technologies: list[str]
+    architecture: list[str]
+    yoe: int | None
+    publish_date: str | None
+    spec_created_at: str | None
+    spec_updated_at: str | None
+
+
 class ScrapeJobsResponse(APIModel):
     generated_at: str
     source_url: str
     new_posting_count: int
     postings: list[JobPosting]
+    job_specs: list[JobSpec]
 
 
 class HealthResponse(APIModel):

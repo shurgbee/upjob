@@ -55,6 +55,27 @@ FLAG_SYMBOLS = {
     "🔒": "closed",
 }
 
+JOB_SPEC_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "technologies": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Individual tools, languages, frameworks, and libraries mentioned (e.g. Python, FastAPI, React, PostgreSQL). One item per technology.",
+        },
+        "architecture": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Architectural components and patterns used in the project (e.g. ETL Pipelines, Pub Sub, Microservices, REST API, Event Driven, Low Latency Systems). One item per pattern.",
+        },
+        "yoe": {
+            "type": "integer",
+            "description": "Minimum years of experience required. 0 if not specified or entry-level.",
+        },
+    },
+    "required": ["technologies", "architecture", "yoe"],
+}
+
 AI_EXTRACTION_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -418,6 +439,65 @@ Feed hints (use only to disambiguate the page):
     return _job_result(posting, extracted, scraped_url)
 
 
+async def generate_job_spec(
+    ai_client: Any,
+    posting: dict[str, Any],
+    model: str,
+) -> dict[str, Any]:
+    """Second AI pass: distill a scraped posting into a normalised job spec."""
+    prompt = f"""You are a job-posting analyst. Given the job details below, extract:
+
+1. **technologies** — every individual tool, language, framework, or library mentioned.
+   Each item should be a single technology (e.g. "Python", "FastAPI", "PostgreSQL").
+2. **architecture** — architectural components and patterns the role involves.
+   Each item should be a single pattern (e.g. "ETL Pipelines", "Pub Sub", "Microservices").
+3. **yoe** — the minimum years of experience required. Use 0 for entry-level or when unspecified.
+
+Only include items explicitly mentioned or strongly implied by the posting.
+
+Company: {posting.get("company", "")}
+Role: {posting.get("role", "")}
+Description: {posting.get("description", "")}
+Skills: {", ".join(posting.get("skills", []))}
+Requirements: {", ".join(posting.get("requirements", []))}"""
+
+    response = await ai_client.models.generate_content(
+        model=model,
+        contents=prompt,
+        config={
+            "response_mime_type": "application/json",
+            "response_json_schema": JOB_SPEC_SCHEMA,
+            "temperature": 0,
+            "max_output_tokens": 4096,
+        },
+    )
+    extracted = getattr(response, "parsed", None)
+    if not isinstance(extracted, dict):
+        response_text = getattr(response, "text", None)
+        if not response_text:
+            raise RuntimeError("Gemini returned an empty response for job spec")
+        extracted = json.loads(response_text)
+    if not isinstance(extracted, dict):
+        raise RuntimeError("Gemini did not return a JSON object for job spec")
+
+    now = datetime.now(timezone.utc).isoformat()
+    return {
+        "title": posting.get("role", ""),
+        "url": posting.get("application_url", ""),
+        "company": posting.get("company", ""),
+        "category": posting.get("category", ""),
+        "employment_type": posting.get("employment_type"),
+        "description": posting.get("description", ""),
+        "requirements": posting.get("requirements", []),
+        "technologies": extracted.get("technologies", []),
+        "architecture": extracted.get("architecture", []),
+        "yoe": extracted.get("yoe", 0),
+        "publish_date": posting.get("date_posted"),
+        "spec_created_at": now,
+        "spec_updated_at": now,
+    }
+
+
 def _load_state(path: Path) -> dict[str, set[str]] | None:
     if not path.exists():
         return None
@@ -693,9 +773,30 @@ async def scrape_new_jobs(
                 )
                 return result
 
-        results = await asyncio.gather(
-            *(bounded(index, posting) for index, posting in enumerate(selected, 1))
-        )
+        results = await asyncio.gather(*(bounded(i, posting) for i, posting in enumerate(selected, 1)))
+
+        ok_results = [r for r in results if r.get("scrape_status") == "ok"]
+        spec_semaphore = asyncio.Semaphore(concurrency)
+
+        async def spec_bounded(posting_data: dict[str, Any]) -> dict[str, Any]:
+            async with spec_semaphore:
+                try:
+                    return await generate_job_spec(ai_client, posting_data, model)
+                except Exception as exc:
+                    now = datetime.now(timezone.utc).isoformat()
+                    return {
+                        "title": posting_data.get("role", ""),
+                        "url": posting_data.get("application_url", ""),
+                        "technologies": [],
+                        "architecture": [],
+                        "yoe": 0,
+                        "publish_date": posting_data.get("date_posted"),
+                        "spec_created_at": now,
+                        "spec_updated_at": now,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+
+        job_specs = await asyncio.gather(*(spec_bounded(r) for r in ok_results))
     finally:
         if browser is not None:
             await browser.close()
@@ -730,11 +831,30 @@ async def scrape_new_jobs(
         duration_seconds=round(time.perf_counter() - run_started, 2),
     )
 
+    specs_list = list(job_specs)
+    valid_specs = [s for s in specs_list if "error" not in s and s.get("architecture")]
+    if valid_specs:
+        try:
+            from job_store import connect, init_db, upsert_job_specs
+
+            db_conn = await connect()
+            try:
+                await init_db(db_conn)
+                await upsert_job_specs(db_conn, valid_specs, gemini_api_key=api_key)
+            finally:
+                await db_conn.close()
+        except Exception as exc:
+            print(
+                json.dumps({"warning": f"Failed to store in TigerData: {exc}"}),
+                file=sys.stderr,
+            )
+
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "source_url": source_url,
         "new_posting_count": len(results),
         "postings": results,
+        "job_specs": specs_list,
     }
 
 
