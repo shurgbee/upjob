@@ -28,6 +28,46 @@ import generation
 import latex_resume
 from common.db import connect
 
+__all__ = ["tailor_resume", "main"]
+
+
+def _load_env_file(path: pathlib.Path) -> None:
+    """Read key-value pairs from a .env file into os.environ if missing."""
+    if not path.is_file():
+        return
+    try:
+        content = path.read_text(encoding="utf-8")
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, val = line.split("=", 1)
+            key = key.strip()
+            val = val.strip().strip("'\"")
+            if key and key not in os.environ:
+                os.environ[key] = val
+    except Exception:
+        pass
+
+
+def _bootstrap_env() -> None:
+    """Ensure .env is loaded via python-dotenv if available, or stdlib fallback."""
+    try:
+        from dotenv import load_dotenv
+        local_env = pathlib.Path(__file__).resolve().parent / ".env"
+        if local_env.is_file():
+            load_dotenv(dotenv_path=local_env)
+        load_dotenv()
+    except ImportError:
+        pass
+
+    # Pure stdlib fallback so .env is always loaded even if python-dotenv is not installed
+    for candidate in [
+        pathlib.Path(__file__).resolve().parent / ".env",
+        pathlib.Path.cwd() / ".env",
+    ]:
+        _load_env_file(candidate)
+
 
 async def tailor_resume(
     job_specification: dict,
@@ -318,12 +358,7 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         0 if status is "ok", 1 otherwise
     """
-    # Try to load .env via python-dotenv if available
-    try:
-        from dotenv import load_dotenv
-        load_dotenv()
-    except ImportError:
-        pass
+    _bootstrap_env()
 
     parser = _build_parser()
     args = parser.parse_args(argv)

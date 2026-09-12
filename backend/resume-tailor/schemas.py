@@ -92,7 +92,7 @@ class JobSpecification:
 class SelectedProject:
     """A project chosen by retrieval, carried through the generation chain."""
 
-    project_id: int
+    project_id: Any
     name: str
     technologies: list[str] = field(default_factory=list)
     architectures: list[str] = field(default_factory=list)
@@ -103,7 +103,7 @@ class SelectedProject:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "project_id": self.project_id,
+            "project_id": str(self.project_id) if hasattr(self.project_id, "hex") else self.project_id,
             "name": self.name,
             "technologies": list(self.technologies),
             "architectures": list(self.architectures),

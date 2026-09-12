@@ -45,18 +45,21 @@ OVERLAP_SQL = """WITH job AS (
   ) AS tech
 )
 SELECT
-  p.id, p.name, p.technologies, p.architectures, p.details_markdown,
-  pa.embedding::text AS embedding_text,
+  p.project_id AS id,
+  p.name,
+  p.technologies,
+  p.architecture AS architectures,
+  p.description AS details_markdown,
+  p.arch_embeddings::text AS embedding_text,
   (
     SELECT count(DISTINCT lower(btrim(pt)))
     FROM unnest(p.technologies) AS pt
     WHERE lower(btrim(pt)) = ANY (job.tech)
   )::float / NULLIF(cardinality(job.tech), 0) AS overlap_ratio
 FROM projects p
-JOIN project_architectures pa ON pa.project_id = p.id
 CROSS JOIN job
-WHERE ($2::text IS NULL OR p.user_id = $2)
-ORDER BY overlap_ratio DESC NULLS LAST, p.id
+WHERE ($2::text IS NULL OR p.user_id::text = $2)
+ORDER BY overlap_ratio DESC NULLS LAST, p.project_id
 LIMIT $3"""
 
 
@@ -145,11 +148,11 @@ def rank_by_similarity(
         similarity = cosine_similarity(vector, job_vector)
 
         project = SelectedProject(
-            project_id=row["id"],
+            project_id=row.get("id") if row.get("id") is not None else row.get("project_id"),
             name=row.get("name", ""),
             technologies=row.get("technologies", []),
-            architectures=row.get("architectures", []),
-            details_markdown=row.get("details_markdown", ""),
+            architectures=row.get("architectures") if row.get("architectures") is not None else row.get("architecture", []),
+            details_markdown=row.get("details_markdown") if row.get("details_markdown") is not None else row.get("description", ""),
             overlap_ratio=row.get("overlap_ratio") or 0.0,
             similarity=similarity,
         )

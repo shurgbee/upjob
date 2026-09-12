@@ -6,7 +6,9 @@ and corrects them. Uses gemini-3.5-flash-lite via common.gemini.generate_json.
 
 from __future__ import annotations
 
-import sys, pathlib
+import sys
+import pathlib
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))  # resume-tailor
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))  # backend
 
@@ -225,9 +227,7 @@ async def generate_all(
             async with semaphore:
                 return await tailor_project(ai_client, job, project, model=model)
 
-        results = await asyncio.gather(
-            *[_tailor_with_semaphore(p) for p in projects]
-        )
+        results = await asyncio.gather(*[_tailor_with_semaphore(p) for p in projects])
         return results
     finally:
         if hasattr(ai_client, "aclose"):
