@@ -1,0 +1,9 @@
+__pycache__/
+.pytest_cache/
+*.py[cod]
+.env
+.venv/
+tailored_resume.tex
+*.aux
+*.log
+*.pdf
