@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
 from typing import Any, Sequence
 
 from ingestion import (
@@ -51,6 +52,13 @@ from schemas import (
 MAX_CHUNKS = 24
 DEFAULT_MAX_CONCURRENCY = 4
 MAX_HEADER_PRIORITY_FILES = 4
+
+#: Flash capacity is shared and bursty: a 503 or 429 is routine and says nothing
+#: about the request. Retrying matters more in the map phase, where one unlucky
+#: chunk would otherwise discard every other chunk's completed work.
+RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+MAX_ATTEMPTS = 4
+RETRY_BASE_DELAY = 2.0
 
 _SHARED_RULES = """
 Rules:
@@ -179,6 +187,20 @@ def select_header_files(files: Sequence[RepoFile]) -> list[RepoFile]:
     return chosen
 
 
+def is_retryable_error(exc: BaseException) -> bool:
+    """True for transient API failures worth another attempt.
+
+    The SDK exposes ``code`` on its API errors; when it does not, fall back to
+    matching the status in the message, since a capacity error must not be
+    mistaken for a bad request and retried forever.
+    """
+    code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    if isinstance(code, int):
+        return code in RETRYABLE_STATUS_CODES
+    message = str(exc)
+    return any(str(status) in message for status in RETRYABLE_STATUS_CODES)
+
+
 async def _generate_json(
     ai_client: Any,
     *,
@@ -187,24 +209,34 @@ async def _generate_json(
     schema: dict[str, Any],
     system_instruction: str,
     max_output_tokens: int = 8192,
+    max_attempts: int = MAX_ATTEMPTS,
 ) -> dict[str, Any]:
     """One structured Gemini call returning a parsed JSON object.
 
     Mirrors the response handling in ``simplify-scraper``: prefer ``parsed``,
     fall back to parsing ``text``, and fail loudly rather than returning a
-    half-understood shape.
+    half-understood shape.  Transient failures are retried with exponential
+    backoff and jitter; anything else is raised immediately.
     """
-    response = await ai_client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config={
-            "system_instruction": system_instruction,
-            "response_mime_type": "application/json",
-            "response_json_schema": schema,
-            "temperature": 0,
-            "max_output_tokens": max_output_tokens,
-        },
-    )
+    config = {
+        "system_instruction": system_instruction,
+        "response_mime_type": "application/json",
+        "response_json_schema": schema,
+        "temperature": 0,
+        "max_output_tokens": max_output_tokens,
+    }
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = await ai_client.models.generate_content(
+                model=model, contents=prompt, config=config
+            )
+            break
+        except Exception as exc:  # noqa: BLE001 - re-raised unless transient
+            if attempt >= max_attempts or not is_retryable_error(exc):
+                raise
+            delay = RETRY_BASE_DELAY * (2 ** (attempt - 1))
+            await asyncio.sleep(delay + random.uniform(0, delay / 2))
+
     parsed = getattr(response, "parsed", None)
     if isinstance(parsed, dict):
         return parsed

@@ -53,7 +53,7 @@ The pipeline has five stages:
 
 4. **Analyze with Gemini**. Small repositories take a single long-context call. Repositories exceeding the character budget are chunked along module boundaries, each chunk analyzed in parallel into a JSON fragment with a shared global header (path tree, README, manifest) so no chunk is read blind. Fragments are merged by deterministic set-union in Python, then one final reduce call writes the summary and collapses near-duplicate names.
 
-5. **Persist** the project specification to the `projects` table (arrays as native `TEXT[]`), render DETAILS.md via a pure serializer, and store a `text-embedding-004` vector of the architectures in `project_architectures` keyed by `project_id`.
+5. **Persist** the project specification to the `projects` table (arrays as native `TEXT[]`), render DETAILS.md via a pure serializer, and store a `gemini-embedding-001` vector (768 dimensions, L2-normalized) of the architectures in `project_architectures` keyed by `project_id`.
 
 ## Limits
 

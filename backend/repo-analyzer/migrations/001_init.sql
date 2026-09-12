@@ -44,15 +44,15 @@ CREATE TABLE IF NOT EXISTS project_architectures (
     project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     -- The combined architecture string that was embedded
     content TEXT NOT NULL,
-    -- pgvector (text-embedding-004 is 768-dimensional)
+    -- pgvector; gemini-embedding-001 truncated to 768 dimensions
     embedding vector(768) NOT NULL,
     -- When this embedding was created/updated
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 COMMENT ON TABLE project_architectures IS
-    'text-embedding-004 vectors (768-dim) of a project''s architecture list, '
-    'keyed to projects.id for similarity matching.';
+    'gemini-embedding-001 vectors (768-dim, L2-normalized) of a project''s '
+    'architecture list, keyed to projects.id for similarity matching.';
 
 -- Index for efficient lookups by project
 CREATE INDEX IF NOT EXISTS idx_project_architectures_project_id

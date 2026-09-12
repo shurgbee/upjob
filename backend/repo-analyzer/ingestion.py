@@ -15,11 +15,14 @@ installed.
 
 from __future__ import annotations
 
+import asyncio
 import re
 import tarfile
 from dataclasses import dataclass
 from typing import Any, Iterable, Iterator, Sequence
 from urllib.parse import urlparse
+
+GITHUB_WEB_ROOT = "https://github.com"
 
 # ---------------------------------------------------------------------------
 # Tunable constants
@@ -196,6 +199,18 @@ def _finish_parse(host: str, raw_path: str) -> tuple[str, str, str | None]:
         if kind in ("tree", "commit") and rest:
             ref = "/".join(rest)
     return owner, repo, ref
+
+
+def canonical_repo_url(owner: str, repo: str) -> str:
+    """The one spelling of a repository's URL used as its stored identity.
+
+    ``parse_repo_url`` accepts many spellings of the same repository -- a bare
+    ``owner/repo``, a ``.git`` suffix, a ``/tree/<branch>`` link, a ``www.``
+    prefix.  Persisting whichever one the caller happened to type would defeat
+    the unique constraint on ``projects.github_repo_url`` and create a duplicate
+    row per spelling, so every write goes through this instead.
+    """
+    return f"{GITHUB_WEB_ROOT}/{owner}/{repo}"
 
 
 def parse_repo_url(url: str) -> tuple[str, str, str | None]:
@@ -595,7 +610,7 @@ class _BufferedByteReader:
         return result
 
 
-async def fetch_repository_files(
+def _fetch_repository_files_blocking(
     owner: str,
     repo: str,
     *,
@@ -604,7 +619,13 @@ async def fetch_repository_files(
     timeout: float = 120.0,
     **caps: Any,
 ) -> list[RepoFile]:
-    """Download a repo's tarball from GitHub and return its filtered files.
+    """Blocking implementation of :func:`fetch_repository_files`.
+
+    Deliberately synchronous: ``tarfile``'s streaming mode drives the download
+    by calling ``read(n)`` itself, which cannot be satisfied from an async
+    iterator without buffering the whole archive first.  Keeping it sync and
+    running it in a worker thread preserves true streaming; see the async
+    wrapper below.
 
     ``httpx`` is imported lazily so this is the only function in the module
     that requires it installed. The response body is streamed straight into
@@ -650,3 +671,30 @@ async def fetch_repository_files(
 
             reader = _BufferedByteReader(response.iter_bytes())
             return list(iter_tarball_files(reader, **caps))
+
+
+async def fetch_repository_files(
+    owner: str,
+    repo: str,
+    *,
+    ref: str | None = None,
+    token: str | None = None,
+    timeout: float = 120.0,
+    **caps: Any,
+) -> list[RepoFile]:
+    """Download a repo's tarball and return its filtered files, off-loop.
+
+    The download and decompression are blocking work, so they run in a worker
+    thread.  Without this the event loop would stall for the whole transfer and
+    callers could not overlap the tarball fetch with other requests (the commit
+    bounds lookup, for one) even though they ``gather`` them.
+    """
+    return await asyncio.to_thread(
+        _fetch_repository_files_blocking,
+        owner,
+        repo,
+        ref=ref,
+        token=token,
+        timeout=timeout,
+        **caps,
+    )

@@ -7,9 +7,16 @@ functions keeps this module testable without the SDK installed.
 
 from __future__ import annotations
 
+import math
 from typing import Sequence
 
 from schemas import EMBEDDING_DIMENSIONS, EMBEDDING_MODEL
+
+#: ``gemini-embedding-001`` returns unit-length vectors only at its native 3072
+#: dimensions.  Truncated outputs (1536, 768) come back un-normalized, so we
+#: normalize them ourselves -- otherwise magnitude varies between rows and any
+#: inner-product comparison is meaningless.
+NATIVE_EMBEDDING_DIMENSIONS = 3072
 
 
 def architecture_document(architectures: Sequence[str]) -> str:
@@ -95,7 +102,24 @@ async def embed_architectures(
             f"expected {dimensions}"
         )
 
+    # Truncated outputs are not unit-length as returned; see the module notes.
+    if dimensions != NATIVE_EMBEDDING_DIMENSIONS:
+        vector = normalize_vector(vector)
+
     return vector
+
+
+def normalize_vector(values: Sequence[float]) -> list[float]:
+    """Scale a vector to unit length, returning it unchanged if already zero.
+
+    A zero vector has no direction to preserve, so it is returned as-is for the
+    caller to reject via :func:`is_zero_vector` rather than dividing by zero.
+    """
+    vector = [float(v) for v in values]
+    magnitude = math.sqrt(sum(v * v for v in vector))
+    if magnitude == 0.0:
+        return vector
+    return [v / magnitude for v in vector]
 
 
 def is_zero_vector(values: Sequence[float]) -> bool:

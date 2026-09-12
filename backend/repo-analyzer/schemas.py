@@ -22,8 +22,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Sequence
 
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
-EMBEDDING_MODEL = "text-embedding-004"
+DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
+EMBEDDING_MODEL = "gemini-embedding-001"
+
+#: ``gemini-embedding-001`` defaults to 3072 dimensions and supports truncation
+#: to 1536 or 768.  768 is ample for the short architecture strings we embed and
+#: keeps the pgvector index small -- but note that only the full 3072-dim output
+#: arrives pre-normalized, so reduced vectors must be L2-normalized by hand (see
+#: ``embeddings.normalize_vector``).
 EMBEDDING_DIMENSIONS = 768
 
 # ---------------------------------------------------------------------------

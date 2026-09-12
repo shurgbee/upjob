@@ -313,5 +313,59 @@ class ChunkFilesTests(unittest.TestCase):
         self.assertEqual(seen, {f.path for f in files})
 
 
+class CanonicalRepoUrlTests(unittest.TestCase):
+    """Every spelling of a repository must persist under one identity."""
+
+    def test_all_accepted_spellings_canonicalize_identically(self):
+        spellings = [
+            "https://github.com/pypa/sampleproject",
+            "http://www.github.com/pypa/sampleproject/",
+            "https://github.com/pypa/sampleproject.git",
+            "https://github.com/pypa/sampleproject/tree/main",
+            "git@github.com:pypa/sampleproject.git",
+            "pypa/sampleproject",
+        ]
+        canonical = {
+            ing.canonical_repo_url(*ing.parse_repo_url(s)[:2])
+            for s in spellings
+        }
+        self.assertEqual(canonical, {"https://github.com/pypa/sampleproject"})
+
+    def test_distinct_repositories_stay_distinct(self):
+        self.assertNotEqual(
+            ing.canonical_repo_url("a", "repo"),
+            ing.canonical_repo_url("b", "repo"),
+        )
+
+
+class FetchIsOffLoopTests(unittest.TestCase):
+    def test_fetch_repository_files_delegates_to_a_worker_thread(self):
+        """The blocking download must not run on the event loop.
+
+        ``tarfile`` drives the transfer with synchronous ``read(n)`` calls, so the
+        fetch stays sync and is off-loaded; running it inline would stall the loop
+        for the whole download and defeat callers that gather it with other work.
+        """
+        import asyncio
+        import threading
+
+        main_thread = threading.get_ident()
+        observed: dict[str, int] = {}
+
+        def fake_blocking(owner, repo, **kwargs):
+            observed["thread"] = threading.get_ident()
+            return [ing.RepoFile("README.md", "hi")]
+
+        original = ing._fetch_repository_files_blocking
+        ing._fetch_repository_files_blocking = fake_blocking
+        try:
+            files = asyncio.run(ing.fetch_repository_files("o", "r"))
+        finally:
+            ing._fetch_repository_files_blocking = original
+
+        self.assertEqual([f.path for f in files], ["README.md"])
+        self.assertNotEqual(observed["thread"], main_thread)
+
+
 if __name__ == "__main__":
     unittest.main()

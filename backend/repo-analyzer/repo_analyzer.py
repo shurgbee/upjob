@@ -36,7 +36,7 @@ from typing import Any
 from analyzer import DEFAULT_MAX_CONCURRENCY, analyze_files
 from commits import fetch_commit_bounds
 from details_md import render_details_md
-from ingestion import DEFAULT_CHAR_BUDGET, parse_repo_url
+from ingestion import DEFAULT_CHAR_BUDGET, canonical_repo_url, parse_repo_url
 from schemas import (
     DEFAULT_GEMINI_MODEL,
     ProjectSpecification,
@@ -72,6 +72,9 @@ async def analyze_repository(
     when the record was persisted.
     """
     owner, repo, ref = parse_repo_url(github_repo_url)
+    # Identity is the canonical URL, never the spelling the caller passed in,
+    # so "owner/repo" and ".../tree/main" resolve to the same project row.
+    canonical_url = canonical_repo_url(owner, repo)
     token = github_token or os.getenv("GITHUB_PAT")
     api_key = gemini_api_key or os.getenv("GEMINI_API_KEY")
     dsn = database_url or os.getenv("DATABASE_URL")
@@ -79,7 +82,7 @@ async def analyze_repository(
     start_time: str | None = None
     end_time: str | None = None
     specification = ProjectSpecification(
-        name=repo, description="", github_repo_url=github_repo_url
+        name=repo, description="", github_repo_url=canonical_url
     )
 
     def failure(message: str) -> dict[str, Any]:
@@ -128,7 +131,7 @@ async def analyze_repository(
 
     specification = build_specification(
         analysis.get("project_specification"),
-        github_repo_url=github_repo_url,
+        github_repo_url=canonical_url,
         fallback_name=repo,
         start_time=start_time,
         end_time=end_time,
