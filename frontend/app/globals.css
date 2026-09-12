@@ -250,6 +250,10 @@ a { color: inherit; text-decoration: none; }
 .sort-indicator.is-active { color: var(--blue); }
 .company-cell { display: inline-flex; align-items: center; gap: 11px; font-weight: 670; }
 .company-mark { display: grid; place-items: center; width: 34px; height: 34px; color: var(--blue); background: var(--blue-soft); border-radius: 10px; font-size: 0.78rem; font-weight: 800; }
+.job-title, .job-technologies { display: block; }
+.job-title { font-weight: 650; }
+.job-technologies { margin-top: 4px; overflow: hidden; color: var(--muted); font-size: 0.72rem; text-overflow: ellipsis; white-space: nowrap; }
+.jobs-table .jobs-empty { height: 120px; color: var(--muted); text-align: center; }
 .action-heading, .jobs-table th.action-heading, .row-action { text-align: center; }
 .action-heading .sort-button { justify-content: center; }
 .row-action a { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-width: 72px; height: 38px; color: white; background: var(--ink); border-radius: 11px; font-size: 0.8rem; font-weight: 700; transition: transform 160ms ease, background 160ms ease; }
