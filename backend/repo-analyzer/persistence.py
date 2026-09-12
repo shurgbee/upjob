@@ -24,10 +24,10 @@ logger = logging.getLogger(__name__)
 
 
 async def ensure_schema(conn: Any, migrations_dir: Path | None = None) -> None:
-    """Execute the initial schema migration on the connection.
+    """Execute all schema migrations on the connection.
 
-    Reads migrations/001_init.sql relative to this module by default
-    and executes it with conn.execute.
+    Reads all *.sql files in migrations directory in sorted filename order
+    and executes each one with conn.execute.
 
     Args:
         conn: An asyncpg connection
@@ -37,10 +37,11 @@ async def ensure_schema(conn: Any, migrations_dir: Path | None = None) -> None:
     if migrations_dir is None:
         migrations_dir = Path(__file__).parent / "migrations"
 
-    migration_file = migrations_dir / "001_init.sql"
-    sql = migration_file.read_text()
-    await conn.execute(sql)
-    logger.info("Schema migration applied: %s", migration_file)
+    migration_files = sorted(migrations_dir.glob("*.sql"))
+    for migration_file in migration_files:
+        sql = migration_file.read_text()
+        await conn.execute(sql)
+        logger.info("Schema migration applied: %s", migration_file)
 
 
 async def upsert_project(
@@ -48,6 +49,7 @@ async def upsert_project(
     specification: dict[str, Any],
     details: dict[str, Any],
     details_markdown: str,
+    user_id: str | None = None,
 ) -> int:
     """Insert or update a project specification.
 
@@ -62,6 +64,7 @@ async def upsert_project(
                       technologies, architectures
         details: Details dict to serialize as JSONB
         details_markdown: Markdown representation of details
+        user_id: Optional user ID identifying the owning user
 
     Returns:
         The project id (either newly inserted or existing)
@@ -77,9 +80,9 @@ async def upsert_project(
         INSERT INTO projects (
             name, description, github_repo_url, start_time, end_time,
             technologies, architectures, details, details_markdown,
-            spec_created_at, spec_updated_at
+            user_id, spec_created_at, spec_updated_at
         ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, now(), now()
+            $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, now(), now()
         )
         ON CONFLICT (github_repo_url) DO UPDATE SET
             name = $1,
@@ -90,6 +93,7 @@ async def upsert_project(
             architectures = $7,
             details = $8::jsonb,
             details_markdown = $9,
+            user_id = $10,
             spec_updated_at = now()
         RETURNING id
     """
@@ -105,6 +109,7 @@ async def upsert_project(
         specification.get("architectures", []),
         details_json,
         details_markdown,
+        user_id,
     )
     return row["id"]
 

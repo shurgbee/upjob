@@ -51,6 +51,7 @@ async def analyze_repository(
     github_repo_url: str,
     *,
     user_context: dict[str, Any] | None = None,
+    user_id: str | None = None,
     github_token: str | None = None,
     gemini_api_key: str | None = None,
     database_url: str | None = None,
@@ -162,6 +163,7 @@ async def analyze_repository(
                 details_markdown=details_markdown,
                 api_key=api_key,
                 embed=embed,
+                user_id=user_id,
             )
         except Exception as exc:  # noqa: BLE001 - analysis is still worth returning
             result["analysis_status"] = "partial"
@@ -181,6 +183,7 @@ async def _persist(
     details_markdown: str,
     api_key: str,
     embed: bool,
+    user_id: str | None = None,
 ) -> int:
     """Write the project record and its architecture embedding; return the id."""
     import persistence
@@ -189,7 +192,7 @@ async def _persist(
     try:
         await persistence.ensure_schema(conn)
         project_id = await persistence.upsert_project(
-            conn, specification.to_dict(), details, details_markdown
+            conn, specification.to_dict(), details, details_markdown, user_id=user_id
         )
         if embed and specification.architectures:
             from embeddings import architecture_document, embed_architectures, is_zero_vector
@@ -232,6 +235,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--user-context",
         help="Inline JSON object, or a path to a JSON file, of author-supplied "
         "metrics, impact, and challenges solved",
+    )
+    parser.add_argument(
+        "--user-id",
+        help="User ID identifying the owning user",
     )
     parser.add_argument(
         "--details-out",
@@ -288,6 +295,7 @@ def main(argv: list[str] | None = None) -> int:
         analyze_repository(
             args.repo_url,
             user_context=user_context,
+            user_id=args.user_id,
             model=args.model,
             char_budget=args.char_budget,
             max_concurrency=args.max_concurrency,
