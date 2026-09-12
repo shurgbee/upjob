@@ -41,9 +41,11 @@ python simplify_scraper.py --all --output jobs.json
 # Some protected sites work better with a visible browser and residential proxy
 python simplify_scraper.py --headful --proxy http://user:pass@host:port
 
-# Override the model or HTML input ceiling
-python simplify_scraper.py --gemini-model gemini-2.5-flash --max-html-chars 750000
+# Override the HTML input ceiling
+python simplify_scraper.py --max-html-chars 750000
 ```
+
+Job extraction always uses `gemini-3.5-flash`.
 
 The command prints a JSON object with `generated_at`, `source_url`,
 `new_posting_count`, and `postings`. Each posting has exactly the fields defined

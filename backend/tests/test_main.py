@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import unittest
 from unittest.mock import AsyncMock, patch
+from uuid import UUID
 
 import httpx
 import simplify_scraper
@@ -62,7 +63,9 @@ class _GenAIClient:
 class ConfigurationTests(unittest.TestCase):
     def test_repository_requests_use_requested_default(self) -> None:
         skill = main.SkillAnalysisRequest(learning_objective="Learn LangGraph")
-        resume = main.ResumeAnalysisRequest()
+        resume = main.ResumeAnalysisRequest(
+            user_id="12345678-1234-5678-1234-567812345678"
+        )
 
         self.assertEqual(skill.repository, "PyroSh0ck/miniProjects-langGraph")
         self.assertEqual(resume.repository, "PyroSh0ck/miniProjects-langGraph")
@@ -151,6 +154,41 @@ class APITests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_resume_endpoint_uses_default_repo(self) -> None:
+        user_id = "12345678-1234-5678-1234-567812345678"
+        analyzer = unittest.mock.Mock()
+        analysis = ResumeAnalysis(
+            Summary="A project.",
+            Architectures=[],
+            Technologies=[],
+            Actions=[],
+            Metrics=[],
+        )
+        analyzer.extract_resume_material = AsyncMock(return_value=analysis)
+        store = AsyncMock()
+
+        with (
+            patch.object(main, "_analyzer", return_value=analyzer),
+            patch.object(main, "_store_resume_analysis", store),
+        ):
+            response = await self.client.post(
+                "/repo-analyzer/resume",
+                json={"user_id": user_id},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        analyzer.extract_resume_material.assert_awaited_once_with(
+            "PyroSh0ck/miniProjects-langGraph"
+        )
+        saved_request, saved_analysis = store.await_args.args
+        self.assertEqual(saved_request.user_id, UUID(user_id))
+        self.assertIs(saved_analysis, analysis)
+
+    async def test_resume_endpoint_requires_user_id(self) -> None:
+        response = await self.client.post("/repo-analyzer/resume", json={})
+
+        self.assertEqual(response.status_code, 422)
+
+    async def test_resume_endpoint_does_not_return_unsaved_analysis(self) -> None:
         analyzer = unittest.mock.Mock()
         analyzer.extract_resume_material = AsyncMock(
             return_value=ResumeAnalysis(
@@ -161,13 +199,64 @@ class APITests(unittest.IsolatedAsyncioTestCase):
                 Metrics=[],
             )
         )
+        store = AsyncMock(
+            side_effect=main.HTTPException(
+                status_code=502,
+                detail="Resume analysis completed, but the project could not be saved.",
+            )
+        )
 
-        with patch.object(main, "_analyzer", return_value=analyzer):
-            response = await self.client.post("/repo-analyzer/resume", json={})
+        with (
+            patch.object(main, "_analyzer", return_value=analyzer),
+            patch.object(main, "_store_resume_analysis", store),
+        ):
+            response = await self.client.post(
+                "/repo-analyzer/resume",
+                json={"user_id": "12345678-1234-5678-1234-567812345678"},
+            )
 
-        self.assertEqual(response.status_code, 200)
-        analyzer.extract_resume_material.assert_awaited_once_with(
-            "PyroSh0ck/miniProjects-langGraph"
+        self.assertEqual(response.status_code, 502)
+
+    async def test_resume_analysis_is_mapped_to_projects_schema(self) -> None:
+        user_id = UUID("12345678-1234-5678-1234-567812345678")
+        request = main.ResumeAnalysisRequest(
+            user_id=user_id,
+            repository="https://github.com/acme/sample-project.git",
+        )
+        analysis = ResumeAnalysis(
+            Summary="A useful project.",
+            Architectures=["Event driven"],
+            Technologies=["Python", "PostgreSQL"],
+            Actions=["Built the service."],
+            Metrics=["Handled 100 requests."],
+        )
+        connection = unittest.mock.MagicMock()
+        connection.__aenter__ = AsyncMock(return_value=connection)
+        connection.__aexit__ = AsyncMock(return_value=None)
+        connection.execute = AsyncMock()
+        connect = AsyncMock(return_value=connection)
+
+        with (
+            patch.dict(
+                main.os.environ,
+                {"POSTGRES_URL": "postgresql://database.example/upjob"},
+            ),
+            patch.object(main.psycopg.AsyncConnection, "connect", connect),
+        ):
+            await main._store_resume_analysis(request, analysis)
+
+        connect.assert_awaited_once_with("postgresql://database.example/upjob")
+        query, parameters = connection.execute.await_args.args
+        self.assertIn("INSERT INTO public.projects", query)
+        self.assertEqual(
+            parameters,
+            (
+                user_id,
+                "sample-project",
+                "A useful project.",
+                ["Python", "PostgreSQL"],
+                ["Event driven"],
+            ),
         )
 
     async def test_scraper_model_can_no_longer_be_overridden(self) -> None:

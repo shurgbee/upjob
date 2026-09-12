@@ -13,11 +13,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Literal
+from uuid import UUID
 
+import psycopg
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, status
 from google.genai.errors import APIError
@@ -41,6 +44,7 @@ from repo_analyzer.config import ConfigurationError, Settings
 from repo_analyzer.models import ResumeAnalysis, SkillEvaluation
 from repo_analyzer.repository import (
     PublicRepositoryRequired,
+    RepositoryRef,
     RepositoryReferenceError,
 )
 from simplify_scraper import (
@@ -85,6 +89,9 @@ class SkillAnalysisRequest(APIModel):
 
 
 class ResumeAnalysisRequest(APIModel):
+    user_id: UUID = Field(
+        description="User UUID from public.user_economy that owns the saved project.",
+    )
     repository: str = Field(
         default=DEFAULT_REPOSITORY,
         min_length=3,
@@ -218,6 +225,50 @@ def _raise_analyzer_http_error(exc: Exception) -> None:
     raise HTTPException(status_code=code, detail=str(exc)) from exc
 
 
+async def _store_resume_analysis(
+    request: ResumeAnalysisRequest,
+    analysis: ResumeAnalysis,
+) -> None:
+    """Persist the resume result as one row in public.projects."""
+
+    connection_string = os.getenv("POSTGRES_URL", "").strip()
+    if not connection_string:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="POSTGRES_URL is not configured.",
+        )
+
+    repository = RepositoryRef.parse(request.repository)
+    try:
+        async with await psycopg.AsyncConnection.connect(
+            connection_string
+        ) as connection:
+            await connection.execute(
+                """
+                INSERT INTO public.projects (
+                    user_id,
+                    name,
+                    description,
+                    technologies,
+                    architecture
+                )
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (
+                    request.user_id,
+                    repository.name,
+                    analysis.Summary,
+                    analysis.Technologies,
+                    analysis.Architectures,
+                ),
+            )
+    except psycopg.Error as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Resume analysis completed, but the project could not be saved.",
+        ) from exc
+
+
 @app.get("/health", response_model=HealthResponse, tags=["system"])
 async def health() -> HealthResponse:
     """Report that the API process is available without calling external services."""
@@ -262,7 +313,7 @@ async def extract_repository_resume(
     """Extract evidence-backed resume material from a public repository."""
 
     try:
-        return await _analyzer(request.show_logs).extract_resume_material(
+        analysis = await _analyzer(request.show_logs).extract_resume_material(
             request.repository
         )
     except HTTPException:
@@ -276,6 +327,9 @@ async def extract_repository_resume(
         ValueError,
     ) as exc:
         _raise_analyzer_http_error(exc)
+
+    await _store_resume_analysis(request, analysis)
+    return analysis
 
 
 @app.post(
