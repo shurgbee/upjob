@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ArrowIcon, BriefcaseIcon, FlameIcon } from "./Icons";
 
 type Job = {
@@ -11,24 +11,76 @@ type Job = {
   status?: string;
 };
 
+type JobTab = "ready" | "applied";
+type SortKey = "company" | "role" | "opened" | "status";
+type SortDirection = "asc" | "desc";
+type SortState = { key: SortKey; direction: SortDirection };
+
 const readyJobs: Job[] = [
-  { company: "Northstar Labs", role: "Frontend Engineer", opened: "Sep 11" },
-  { company: "Orbit Health", role: "Product Engineer", opened: "Sep 10" },
-  { company: "Canvas AI", role: "Software Engineer", opened: "Sep 9" },
-  { company: "Signalworks", role: "UI Engineer", opened: "Sep 8" },
+  { company: "Northstar Labs", role: "Frontend Engineer", opened: "2026-09-11" },
+  { company: "Orbit Health", role: "Product Engineer", opened: "2026-09-10" },
+  { company: "Canvas AI", role: "Software Engineer", opened: "2026-09-09" },
+  { company: "Signalworks", role: "UI Engineer", opened: "2026-09-08" },
 ];
 
 const appliedJobs: Job[] = [
-  { company: "Maple Systems", role: "React Developer", opened: "Sep 9", status: "In review" },
-  { company: "Frame Financial", role: "Frontend Engineer", opened: "Sep 6", status: "Applied" },
-  { company: "Sparrow", role: "Product Developer", opened: "Sep 4", status: "Follow-up due" },
+  { company: "Maple Systems", role: "React Developer", opened: "2026-09-09", status: "In review" },
+  { company: "Frame Financial", role: "Frontend Engineer", opened: "2026-09-06", status: "Applied" },
+  { company: "Sparrow", role: "Product Developer", opened: "2026-09-04", status: "Follow-up due" },
 ];
 
+const dateFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  timeZone: "UTC",
+});
+
+function SortIndicator({ active, direction }: { active: boolean; direction: SortDirection }) {
+  return <span className={`sort-indicator${active ? " is-active" : ""}`} aria-hidden="true">{active && direction === "desc" ? "↓" : "↑"}</span>;
+}
+
 export function Dashboard() {
-  const [tab, setTab] = useState<"ready" | "applied">("ready");
+  const [tab, setTab] = useState<JobTab>("ready");
+  const [sort, setSort] = useState<Record<JobTab, SortState>>({
+    ready: { key: "opened", direction: "desc" },
+    applied: { key: "opened", direction: "desc" },
+  });
   const { user } = useAuth({ ensureSignedIn: true });
   const jobs = tab === "ready" ? readyJobs : appliedJobs;
+  const currentSort = sort[tab];
+  const sortedJobs = useMemo(() => {
+    return [...jobs].sort((first, second) => {
+      const firstValue = first[currentSort.key] ?? "";
+      const secondValue = second[currentSort.key] ?? "";
+      const result = firstValue.localeCompare(secondValue, undefined, { sensitivity: "base" });
+
+      return currentSort.direction === "asc" ? result : -result;
+    });
+  }, [currentSort, jobs]);
   const firstName = user?.firstName ?? user?.name?.split(" ")[0] ?? "there";
+
+  const updateSort = (key: SortKey) => {
+    setSort((current) => ({
+      ...current,
+      [tab]: {
+        key,
+        direction: current[tab].key === key && current[tab].direction === "asc" ? "desc" : "asc",
+      },
+    }));
+  };
+
+  const sortableHeader = (key: SortKey, label: string, className?: string) => {
+    const isActive = currentSort.key === key;
+
+    return (
+      <th scope="col" className={className} aria-sort={isActive ? (currentSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+        <button type="button" className="sort-button" onClick={() => updateSort(key)}>
+          {label}
+          <SortIndicator active={isActive} direction={currentSort.direction} />
+        </button>
+      </th>
+    );
+  };
 
   return (
     <div className="dashboard">
@@ -51,17 +103,36 @@ export function Dashboard() {
             <button type="button" role="tab" aria-selected={tab === "applied"} onClick={() => setTab("applied")}>Jobs applied <span>24</span></button>
           </div>
         </div>
-        <div className="jobs-table" role="table" aria-label={tab === "ready" ? "Jobs to apply" : "Applied jobs"}>
-          <div className="jobs-row jobs-table-head" role="row"><span role="columnheader">Company</span><span role="columnheader">Role</span><span role="columnheader">Date opened</span><span role="columnheader">{tab === "ready" ? "Details" : "Status"}</span></div>
-          {jobs.map((job) => (
-            <div className="jobs-row" role="row" key={`${job.company}-${job.role}`}>
-              <span role="cell" className="company-cell"><span className="company-mark">{job.company.charAt(0)}</span>{job.company}</span>
-              <span role="cell">{job.role}</span><span role="cell">{job.opened}</span>
-              <span role="cell" className="row-action">
-                {job.status ? <span className={`status-pill ${job.status.toLowerCase().replaceAll(" ", "-")}`}>{job.status}</span> : <a href={`https://www.google.com/search?q=${encodeURIComponent(`${job.company} ${job.role}`)}`} target="_blank" rel="noreferrer" aria-label={`View ${job.role} at ${job.company}`}>Go <ArrowIcon /></a>}
-              </span>
-            </div>
-          ))}
+        <div className="jobs-table-wrap">
+          <table className="jobs-table">
+            <caption className="sr-only">{tab === "ready" ? "Jobs to apply" : "Applied jobs"}</caption>
+            <colgroup>
+              <col className="company-column" />
+              <col className="role-column" />
+              <col className="date-column" />
+              <col className="action-column" />
+            </colgroup>
+            <thead>
+              <tr>
+                {sortableHeader("company", "Company")}
+                {sortableHeader("role", "Role")}
+                {sortableHeader("opened", "Date opened")}
+                {tab === "applied" ? sortableHeader("status", "Status", "action-heading") : <th scope="col" className="action-heading">Apply</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {sortedJobs.map((job) => (
+                <tr key={`${job.company}-${job.role}`}>
+                  <td><span className="company-cell"><span className="company-mark">{job.company.charAt(0)}</span>{job.company}</span></td>
+                  <td>{job.role}</td>
+                  <td><time dateTime={job.opened}>{dateFormatter.format(new Date(`${job.opened}T00:00:00Z`))}</time></td>
+                  <td className="row-action">
+                    {job.status ? <span className={`status-pill ${job.status.toLowerCase().replaceAll(" ", "-")}`}>{job.status}</span> : <a href={`https://www.google.com/search?q=${encodeURIComponent(`${job.company} ${job.role}`)}`} target="_blank" rel="noreferrer" aria-label={`Apply for ${job.role} at ${job.company}`}>Apply <ArrowIcon /></a>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </section>
     </div>
