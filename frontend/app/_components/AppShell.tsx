@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -14,7 +15,18 @@ const navigation = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const pathname = usePathname();
+  const { user, signOut } = useAuth({ ensureSignedIn: true });
+  const email = user?.email ?? "";
+  const displayName = user?.name ?? ([user?.firstName, user?.lastName].filter(Boolean).join(" ") || email || "Account");
+  const initials = (user?.firstName?.[0] ?? email[0] ?? "U") + (user?.lastName?.[0] ?? "");
+
+  async function handleSignOut() {
+    setSigningOut(true);
+    await signOut({ returnTo: `${window.location.origin}/login` });
+  }
 
   return (
     <div className="app-shell">
@@ -28,7 +40,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="topbar-actions">
           <Link href="/shop" className="coin-balance" aria-label="12 reward coins, open shop"><span>12</span><CoinIcon /></Link>
           <button className="icon-button notification-button" type="button" aria-label="Notifications"><BellIcon /><span className="notification-dot" /></button>
-          <button className="avatar" type="button" aria-label="Open Jordan's profile">JD</button>
+          <div className="profile-menu-wrap">
+            <button className="avatar" type="button" aria-label={`Open ${displayName}'s profile`} aria-expanded={profileOpen} onClick={() => setProfileOpen((open) => !open)}>{initials.toUpperCase()}</button>
+            {profileOpen && (
+              <div className="profile-menu">
+                <div className="profile-summary"><span className="profile-avatar">{initials.toUpperCase()}</span><div><strong>{displayName}</strong><span>{email}</span></div></div>
+                <button type="button" onClick={handleSignOut} disabled={signingOut}>{signingOut ? "Signing out…" : "Sign out"}</button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
@@ -46,6 +66,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
         <div className="drawer-streak"><FlameIcon /><div><strong>7 day streak</strong><span>Keep the momentum going.</span></div></div>
+        <div className="drawer-account"><span>{displayName}</span><button type="button" onClick={() => void handleSignOut()} disabled={signingOut}>{signingOut ? "Signing out…" : "Sign out"}</button></div>
       </aside>
 
       <main className="page-content">{children}</main>

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AppShell } from "../_components/AppShell";
+import { AuthenticatedShell } from "../_components/AuthenticatedShell";
 import { RewardShop } from "../_components/RewardShop";
 
 export const metadata: Metadata = {
@@ -8,5 +9,5 @@ export const metadata: Metadata = {
 };
 
 export default function ShopPage() {
-  return <AppShell><RewardShop /></AppShell>;
+  return <AuthenticatedShell><AppShell><RewardShop /></AppShell></AuthenticatedShell>;
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import { useState } from "react";
 import { ArrowIcon, BriefcaseIcon, FlameIcon } from "./Icons";
 
@@ -25,12 +26,14 @@ const appliedJobs: Job[] = [
 
 export function Dashboard() {
   const [tab, setTab] = useState<"ready" | "applied">("ready");
+  const { user } = useAuth({ ensureSignedIn: true });
   const jobs = tab === "ready" ? readyJobs : appliedJobs;
+  const firstName = user?.firstName ?? user?.name?.split(" ")[0] ?? "there";
 
   return (
     <div className="dashboard">
       <section className="welcome-row">
-        <div><p className="eyebrow">Friday, September 11</p><h1>Good morning, Jordan.</h1><p className="welcome-copy">Your next opportunity is ready when you are.</p></div>
+        <div><p className="eyebrow">Friday, September 11</p><h1>Good morning, {firstName}.</h1><p className="welcome-copy">Your next opportunity is ready when you are.</p></div>
         <div className="weekly-goal"><span>Weekly goal</span><strong>8 of 10</strong><div className="goal-track"><span /></div></div>
       </section>
 
