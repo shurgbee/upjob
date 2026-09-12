@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "repo-analyzer"
+version = "0.1.0"
+description = "Evidence-based public GitHub repository analysis through GitHub MCP"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "google-genai>=1.50,<2",
+  "mcp>=2.2,<3",
+  "pydantic>=2.10,<3",
+  "python-dotenv>=1.0,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<10",
+  "pytest-asyncio>=0.24,<2",
+  "ruff>=0.9",
+]
+
+[project.scripts]
+repo-analyzer = "repo_analyzer.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/repo_analyzer"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
