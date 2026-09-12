@@ -2,7 +2,7 @@
 
 How the feature works, how to navigate the code, and which file to open for a
 given bug. For setup and commands see `README.md`; for status and the TODO list
-see `PROGRESS.md`; for the original spec see `../RepoAnalyzer.md`.
+see `../PROGRESS.md` (backend-wide); for the original spec see `../RepoAnalyzer.md`.
 
 ## What it does
 

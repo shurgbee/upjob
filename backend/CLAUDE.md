@@ -4,12 +4,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository layout
 
-This `backend` directory contains two standalone components, each its own project root (there is no umbrella backend service wiring them together yet):
+This `backend` directory contains several standalone components plus one shared package, each its own project root (there is no umbrella backend service wiring them together yet):
 
 - `simplify-scraper/` — discovers and extracts new SimplifyJobs internship postings with CloakBrowser + Gemini.
 - `repo-analyzer/` — ingests a GitHub repository URL and profiles the skills it demonstrates, persisting a project specification, a `DETAILS.md` document, and a pgvector embedding. Implements the spec in `RepoAnalyzer.md`.
+- `resume-tailor/` — builds a tailored LaTeX resume by matching a user's analyzed projects (from repo-analyzer) against a job specification, then generating and reviewing bullet points. Implements the spec in `ResumeTailor.md`.
+- `common/` — shared helpers imported by repo-analyzer and resume-tailor: `db.py` (connection/DSN/vector/timestamp), `gemini.py` (`generate_json` + retry/backoff), `embeddings.py` (`gemini-embedding-001`, L2 normalization), `latex.py` (escaping), `models.py` (model identifiers).
 
-Both follow the same conventions: a single async public entry point callable from a FastAPI route (returns only JSON-serializable data), stdlib `unittest` (no pytest), and heavy third-party imports (browser/AI/DB SDKs) done lazily inside functions so pure logic is testable without them installed.
+Backend-wide status and the TODO list live in `PROGRESS.md`. Each feature has a `DOCUMENTATION.md` (navigation + file map + symptom→file table) and a `README.md` (setup + usage).
+
+All components follow the same conventions: a single async public entry point callable from a FastAPI route (returns only JSON-serializable data), stdlib `unittest` (no pytest), and heavy third-party imports (browser/AI/DB SDKs) done lazily inside functions so pure logic is testable without them installed.
+
+### The `common` package and sys.path
+
+`common` lives at the `backend/` level, but each component runs from its own directory, so `backend/` is not on `sys.path` by default. Every entry point and test module that imports `common` must first prepend `backend/` with a raw bootstrap (it cannot live inside `common` — importing it would already require the path):
+
+```python
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[N]))  # backend/
+```
+
+`N` is the number of directories up to `backend/` (1 from a component file, 2 from a component's `tests/`). repo-analyzer re-exports the moved helpers from its own `persistence.py`/`embeddings.py`/`analyzer.py` for backward compatibility, so its public module API is unchanged.
 
 ## simplify-scraper (run from `simplify-scraper/`)
 
@@ -99,10 +114,41 @@ A failure in any stage degrades rather than aborts: the envelope from `schemas.a
 
 ### Model and embedding notes
 
-- Generation model default is `gemini-3.5-flash-lite`; embeddings use `gemini-embedding-001` (see `schemas.DEFAULT_GEMINI_MODEL` / `EMBEDDING_MODEL`). `gemini-2.5-flash` and `text-embedding-004` are not available on the current key.
-- `gemini-embedding-001` returns unit-length vectors only at its native 3072 dims; reduced-dimension (768) output is **not** normalized by the API, so `embeddings.embed_architectures` L2-normalizes it before storage.
+- Generation model default is `gemini-3.5-flash-lite`; embeddings use `gemini-embedding-001` (defined in `common/models.py`, re-exported by `schemas`). `gemini-2.5-flash` and `text-embedding-004` are not available on the current key.
+- `gemini-embedding-001` returns unit-length vectors only at its native 3072 dims; reduced-dimension (768) output is **not** normalized by the API, so `common/embeddings.py` L2-normalizes it before storage.
 
-## Conventions (both components)
+## resume-tailor (run from `resume-tailor/`)
+
+Setup:
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env   # fill in GEMINI_API_KEY, DATABASE_URL (same DB as repo-analyzer)
+```
+
+Run the tailor (the job spec is inline JSON or a path to a JSON file following `ResumeTailor.md` section 1):
+```bash
+python resume_tailor.py job.json --user-id <id> --candidate-name "Jane Doe" --output tailored_resume.tex
+python resume_tailor.py job.json --user-id <id> --top-k 3 --json-out result.json
+```
+
+Run tests (offline — no DB, network, or model):
+```bash
+python -m unittest discover -s tests -t .
+```
+
+### Architecture
+
+The public entry point is `tailor_resume` in `resume_tailor.py` — async, returns a JSON-serializable envelope, wraps the CLI. The pipeline (detailed in `resume-tailor/DOCUMENTATION.md`):
+
+1. **Retrieval** (`retrieval.py`): embed the job's `Architecture` in memory (never stored), then stage 2B — a PostgreSQL hard-skill overlap filter (`OVERLAP_SQL`, case-insensitive, scoped by `user_id`, 0.8 threshold with a best-by-overlap fallback so it always returns candidates) — then stage 2C — an in-memory cosine rank over the stored embeddings (cosine == dot product because both are L2-normalized) — returning the top 3–4 projects with their `details_markdown`. It reads the repo-analyzer tables and never writes them.
+2. **Generation** (`generation.py`): a two-pass Gemini chain — `SYSTEM_PROMPT_GENERATE` (Google-XYZ bullets) then `SYSTEM_PROMPT_REVIEW` (strip first-person, strengthen verbs, enforce a metric), both verbatim from the spec — bounded-concurrent across projects.
+3. **LaTeX injection** (`latex_resume.py` + `templates/resume_template.tex`): a pure serializer that escapes all text via `common.latex` and `str.replace`s the `{{CANDIDATE_NAME}}`/`{{PROJECTS}}` tokens. Output compiles with `pdflatex`.
+
+**Critical gotcha:** retrieval must embed with the embedding model, not the generation model — do not forward `tailor_resume`'s generation `model` into `select_projects` (it falls back to `EMBEDDING_MODEL`). Passing a generation model yields a 404 on `embedContent`. A resume bullet's mandated metric (spec §4) is often fabricated by the model — inherent to the spec.
+
+## Conventions (all components)
 
 - No linter/formatter is configured.
 - Tests are stdlib `unittest`. Keep them offline: stub SDKs in `sys.modules`, build tarballs in memory, use fake DSNs — never hit a real network, database, or model.
