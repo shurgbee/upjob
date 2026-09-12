@@ -307,8 +307,7 @@ def _limit_html(page_html: str, max_chars: int) -> str:
 
 async def _clean_page_html(page: Any, max_chars: int) -> str:
     """Return rendered HTML with executable and presentation noise removed."""
-    page_html = await page.evaluate(
-        """() => {
+    page_html = await page.evaluate("""() => {
             const root = document.documentElement.cloneNode(true);
             root.querySelectorAll(
                 'script:not([type="application/ld+json"]), style, noscript, svg, canvas, iframe'
@@ -325,8 +324,7 @@ async def _clean_page_html(page: Any, max_chars: int) -> str:
                 }
             });
             return '<!doctype html>\\n' + root.outerHTML;
-        }"""
-    )
+        }""")
     return _limit_html(page_html, max_chars)
 
 
