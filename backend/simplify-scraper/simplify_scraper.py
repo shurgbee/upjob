@@ -28,6 +28,7 @@ DEFAULT_SOURCE_URL = (
 )
 DEFAULT_STATE_FILE = Path(".simplify_scraper_state.json")
 DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
+GEMINI_MODEL = "gemini-3.5-flash"
 DEFAULT_MAX_HTML_CHARS = 1_000_000
 
 _LOG_COLORS = {
@@ -540,7 +541,6 @@ async def scrape_new_jobs(
     proxy: str | None = None,
     include_all: bool = False,
     gemini_api_key: str | None = None,
-    gemini_model: str | None = None,
     max_html_chars: int = DEFAULT_MAX_HTML_CHARS,
     show_logs: bool = False,
 ) -> dict[str, Any]:
@@ -584,7 +584,7 @@ async def scrape_new_jobs(
     api_key = gemini_api_key or os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY is not set in the environment or .env")
-    model = gemini_model or os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+    model = GEMINI_MODEL
 
     launch_options: dict[str, Any] = {"headless": headless}
     if proxy:
@@ -789,7 +789,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 headless=not args.headful,
                 proxy=args.proxy,
                 include_all=args.all,
-                gemini_model=args.gemini_model,
                 max_html_chars=args.max_html_chars,
                 show_logs=args.show_logs,
             )
