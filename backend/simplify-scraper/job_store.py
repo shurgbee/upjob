@@ -129,7 +129,7 @@ async def upsert_job_specs(
                                    description, requirements, technologies, architecture,
                                    yoe, publish_date, spec_created_at, spec_updated_at,
                                    arch_embedding)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::vector)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::text[], $9::text[], $10, $11, $12, $13, $14::vector)
             ON CONFLICT (url) DO UPDATE SET
                 title = EXCLUDED.title,
                 company = EXCLUDED.company,
@@ -150,9 +150,9 @@ async def upsert_job_specs(
             spec.get("category", ""),
             spec.get("employment_type"),
             spec.get("description", ""),
-            spec.get("requirements", []),
-            spec.get("technologies", []),
-            spec.get("architecture", []),
+            json.dumps(spec.get("requirements", [])),
+            [str(t) for t in spec.get("technologies", [])],
+            [str(a) for a in spec.get("architecture", [])],
             spec.get("yoe", 0),
             _parse_ts(spec.get("publish_date")),
             _parse_ts(spec.get("spec_created_at")) or datetime.now(timezone.utc),
