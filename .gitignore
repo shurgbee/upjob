@@ -1,0 +1,6 @@
+/backend/repo-analyzer/.env
+/backend/repo-analyzer/src/repo_analyzer/__pycache__
+/backend/repo-analyzer/tests/__pycache__
+/backend/.env
+/backend/__pycache__
+*.env
