@@ -1,0 +1,6 @@
+__pycache__/
+.pytest_cache/
+*.py[cod]
+.env
+.simplify_scraper_state.json
+.simplify_scraper_state.json.tmp

@@ -1,0 +1,19 @@
+{
+        "id": hashlib.sha256(posting.application_url.encode()).hexdigest()[:16], #uuid v4
+        "company": posting.company,
+        "role": posting.role,
+        "category": posting.category,
+        "application_url": posting.application_url,
+        "age_days": posting.age_days, #days since being posted
+        "date_posted": schema.get("datePosted"),
+        "valid_through": schema.get("validThrough"),
+        "employment_type": schema.get("employmentType"),
+        "description": description,
+        "requirements": requirements, #limiters for job that aren't skills like grad date, citizenship, etc
+        "skills": _extract_skills(
+            schema.get("skills"), f"{description}\n{visible_body}"
+        ),
+        "scrape_status": "ok",
+        "error": None,
+}
+
