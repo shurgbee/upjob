@@ -484,6 +484,11 @@ Requirements: {", ".join(posting.get("requirements", []))}"""
     return {
         "title": posting.get("role", ""),
         "url": posting.get("application_url", ""),
+        "company": posting.get("company", ""),
+        "category": posting.get("category", ""),
+        "employment_type": posting.get("employment_type"),
+        "description": posting.get("description", ""),
+        "requirements": posting.get("requirements", []),
         "technologies": extracted.get("technologies", []),
         "architecture": extracted.get("architecture", []),
         "yoe": extracted.get("yoe", 0),

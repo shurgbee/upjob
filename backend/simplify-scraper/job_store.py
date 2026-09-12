@@ -30,6 +30,11 @@ CREATE TABLE IF NOT EXISTS job_specs (
     id            SERIAL PRIMARY KEY,
     title         TEXT NOT NULL,
     url           TEXT NOT NULL UNIQUE,
+    company       TEXT NOT NULL DEFAULT '',
+    category      TEXT NOT NULL DEFAULT '',
+    employment_type TEXT,
+    description   TEXT NOT NULL DEFAULT '',
+    requirements  TEXT[] NOT NULL DEFAULT '{}',
     technologies  TEXT[] NOT NULL DEFAULT '{}',
     architecture  TEXT[] NOT NULL DEFAULT '{}',
     yoe           INTEGER NOT NULL DEFAULT 0,
@@ -120,12 +125,18 @@ async def upsert_job_specs(
 
         await conn.execute(
             """
-            INSERT INTO job_specs (title, url, technologies, architecture, yoe,
-                                   publish_date, spec_created_at, spec_updated_at,
+            INSERT INTO job_specs (title, url, company, category, employment_type,
+                                   description, requirements, technologies, architecture,
+                                   yoe, publish_date, spec_created_at, spec_updated_at,
                                    arch_embedding)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::vector)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::vector)
             ON CONFLICT (url) DO UPDATE SET
                 title = EXCLUDED.title,
+                company = EXCLUDED.company,
+                category = EXCLUDED.category,
+                employment_type = EXCLUDED.employment_type,
+                description = EXCLUDED.description,
+                requirements = EXCLUDED.requirements,
                 technologies = EXCLUDED.technologies,
                 architecture = EXCLUDED.architecture,
                 yoe = EXCLUDED.yoe,
@@ -135,6 +146,11 @@ async def upsert_job_specs(
             """,
             spec.get("title", ""),
             spec["url"],
+            spec.get("company", ""),
+            spec.get("category", ""),
+            spec.get("employment_type"),
+            spec.get("description", ""),
+            spec.get("requirements", []),
             spec.get("technologies", []),
             spec.get("architecture", []),
             spec.get("yoe", 0),
