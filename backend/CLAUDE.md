@@ -99,7 +99,7 @@ A failure in any stage degrades rather than aborts: the envelope from `schemas.a
 
 ### Model and embedding notes
 
-- Generation model default is `gemini-3.6-flash`; embeddings use `gemini-embedding-001` (see `schemas.DEFAULT_GEMINI_MODEL` / `EMBEDDING_MODEL`). `gemini-2.5-flash` and `text-embedding-004` are not available on the current key.
+- Generation model default is `gemini-3.5-flash-lite`; embeddings use `gemini-embedding-001` (see `schemas.DEFAULT_GEMINI_MODEL` / `EMBEDDING_MODEL`). `gemini-2.5-flash` and `text-embedding-004` are not available on the current key.
 - `gemini-embedding-001` returns unit-length vectors only at its native 3072 dims; reduced-dimension (768) output is **not** normalized by the API, so `embeddings.embed_architectures` L2-normalizes it before storage.
 
 ## Conventions (both components)
