@@ -19,18 +19,13 @@ Two output shapes travel through the pipeline:
 
 from __future__ import annotations
 
+import sys as _sys, pathlib as _pathlib
+_sys.path.insert(0, str(_pathlib.Path(__file__).resolve().parents[1]))  # backend/
+
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Sequence
 
-DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
-EMBEDDING_MODEL = "gemini-embedding-001"
-
-#: ``gemini-embedding-001`` defaults to 3072 dimensions and supports truncation
-#: to 1536 or 768.  768 is ample for the short architecture strings we embed and
-#: keeps the pgvector index small -- but note that only the full 3072-dim output
-#: arrives pre-normalized, so reduced vectors must be L2-normalized by hand (see
-#: ``embeddings.normalize_vector``).
-EMBEDDING_DIMENSIONS = 768
+from common.models import DEFAULT_GEMINI_MODEL, EMBEDDING_MODEL, EMBEDDING_DIMENSIONS
 
 # ---------------------------------------------------------------------------
 # DETAILS.md structure
