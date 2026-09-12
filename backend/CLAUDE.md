@@ -174,6 +174,9 @@ python reward_handler.py weekly-reset
 Run tests (offline — no DB, Redis, or model SDK required):
 ```bash
 python -m unittest discover -s tests -t .
+# Single module:
+python -m unittest tests.test_economy
+python -m unittest tests.test_subagents
 ```
 
 ### Architecture
