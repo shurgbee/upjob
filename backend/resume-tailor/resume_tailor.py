@@ -129,6 +129,10 @@ async def tailor_resume(
         conn = await connect(dsn)
         try:
             # Stage 1: Retrieve matching projects
+            # NOTE: `model` is the GENERATION model and must not be forwarded to
+            # retrieval — its embedding step uses the embedding model (and must,
+            # to match the stored vectors). Leaving `model` unset lets
+            # embed_job_architecture fall back to EMBEDDING_MODEL.
             selected = await retrieval.select_projects(
                 conn,
                 job,
@@ -136,7 +140,6 @@ async def tailor_resume(
                 api_key=api_key,
                 threshold=threshold,
                 top_k=top_k,
-                model=model,
             )
 
             # Stage 2: Check if any projects were selected
