@@ -16,6 +16,13 @@ printf 'GEMINI_API_KEY=your-key\n' > .env
 python simplify_scraper.py --max-jobs 10
 ```
 
+Add `--show-logs` to print live browser, feed, per-job, Gemini, and state-file
+progress to stderr while the final JSON remains on stdout:
+
+```bash
+python simplify_scraper.py --max-jobs 10 --show-logs
+```
+
 The first stateful run considers the feed's `0d` rows new. Later runs only
 process application URLs absent from `.simplify_scraper_state.json`. If
 `--max-jobs` limits a batch, the remaining new URLs stay queued in that state

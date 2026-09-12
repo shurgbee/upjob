@@ -13,6 +13,7 @@ import json
 import os
 import re
 import sys
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -26,8 +27,24 @@ DEFAULT_SOURCE_URL = (
     "Summer2027-Internships/refs/heads/dev/README.md"
 )
 DEFAULT_STATE_FILE = Path(".simplify_scraper_state.json")
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
 DEFAULT_MAX_HTML_CHARS = 1_000_000
+
+_LOG_COLORS = {
+    "run_started": "\033[96m",
+    "browser_launched": "\033[94m",
+    "feed_fetched": "\033[94m",
+    "jobs_selected": "\033[93m",
+    "job_started": "\033[95m",
+    "page_loaded": "\033[94m",
+    "html_prepared": "\033[94m",
+    "ai_extraction_started": "\033[95m",
+    "job_finished": "\033[92m",
+    "job_failed": "\033[91m",
+    "state_saved": "\033[94m",
+    "run_finished": "\033[92m",
+}
+_ANSI_RESET = "\033[0m"
 
 FLAG_SYMBOLS = {
     "🔥": "faang_plus",
@@ -98,6 +115,25 @@ class FeedPosting:
     simplify_url: str | None
     age_days: int | None
     flags: list[str]
+
+
+def _write_scraper_event(event: str, **details: Any) -> None:
+    """Write one structured progress event without contaminating JSON stdout."""
+    rendered = json.dumps(details, ensure_ascii=False, default=str)
+    if len(rendered) > 4_000:
+        rendered = rendered[:4_000] + "… [truncated]"
+
+    timestamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
+    prefix = f"[{timestamp}] [simplify-scraper:{event}]"
+    if sys.stderr.isatty():
+        color = _LOG_COLORS.get(event, "\033[97m")
+        prefix = f"{color}{prefix}{_ANSI_RESET}"
+    print(f"{prefix} {rendered}", file=sys.stderr, flush=True)
+
+
+def _log(show_logs: bool, event: str, **details: Any) -> None:
+    if show_logs:
+        _write_scraper_event(event, **details)
 
 
 class _TableParser(HTMLParser):
@@ -434,6 +470,7 @@ async def _scrape_one(
     timeout_ms: int,
     model: str,
     max_html_chars: int,
+    show_logs: bool = False,
 ) -> dict[str, Any]:
     page = await browser.new_page()
     scraped_url = posting.application_url
@@ -446,7 +483,28 @@ async def _scrape_one(
         # Give client-rendered job boards a brief chance to populate their DOM.
         await asyncio.sleep(1)
         scraped_url = page.url
+        _log(
+            show_logs,
+            "page_loaded",
+            company=posting.company,
+            role=posting.role,
+            url=scraped_url,
+        )
         page_html = await _clean_page_html(page, max_html_chars)
+        _log(
+            show_logs,
+            "html_prepared",
+            company=posting.company,
+            role=posting.role,
+            characters=len(page_html),
+        )
+        _log(
+            show_logs,
+            "ai_extraction_started",
+            company=posting.company,
+            role=posting.role,
+            model=model,
+        )
         return await extract_job_details_with_ai(
             ai_client=ai_client,
             posting=posting,
@@ -455,6 +513,13 @@ async def _scrape_one(
             model=model,
         )
     except Exception as exc:  # One bad ATS must not discard the rest of the batch.
+        _log(
+            show_logs,
+            "job_failed",
+            company=posting.company,
+            role=posting.role,
+            error=f"{type(exc).__name__}: {exc}",
+        )
         return _error_result(posting, exc, scraped_url)
     finally:
         try:
@@ -477,12 +542,14 @@ async def scrape_new_jobs(
     gemini_api_key: str | None = None,
     gemini_model: str | None = None,
     max_html_chars: int = DEFAULT_MAX_HTML_CHARS,
+    show_logs: bool = False,
 ) -> dict[str, Any]:
     """Fetch the feed, scrape newly discovered jobs, and return JSON-ready data.
 
     Pass ``state_file=None`` for a stateless call. On the first stateful run,
     listings no older than ``first_run_max_age_days`` are considered new.
-    Later runs use application URLs as durable identities.
+    Later runs use application URLs as durable identities. Set ``show_logs`` to
+    print live progress to stderr without changing the returned data.
     """
     if concurrency < 1:
         raise ValueError("concurrency must be at least 1")
@@ -490,6 +557,18 @@ async def scrape_new_jobs(
         raise ValueError("max_jobs cannot be negative")
     if max_html_chars < 10_000:
         raise ValueError("max_html_chars must be at least 10000")
+
+    run_started = time.perf_counter()
+    _log(
+        show_logs,
+        "run_started",
+        source_url=source_url,
+        state_file=str(state_file) if state_file is not None else None,
+        max_jobs=max_jobs,
+        concurrency=concurrency,
+        headless=headless,
+        include_all=include_all,
+    )
 
     # Import lazily so feed parsing and unit tests need neither browser nor AI SDK.
     try:
@@ -520,6 +599,7 @@ async def scrape_new_jobs(
     candidates: list[FeedPosting] = []
     try:
         browser = await launch_async(**launch_options)
+        _log(show_logs, "browser_launched", headless=headless, proxy=bool(proxy))
         feed_page = await browser.new_page()
         try:
             await feed_page.goto(
@@ -538,6 +618,12 @@ async def scrape_new_jobs(
             raise RuntimeError(
                 "No active job rows were found; the README format may have changed"
             )
+        _log(
+            show_logs,
+            "feed_fetched",
+            source_url=source_url,
+            active_postings=len(feed_postings),
+        )
 
         if include_all:
             selected = feed_postings
@@ -561,23 +647,55 @@ async def scrape_new_jobs(
                 if posting.application_url in candidate_urls
             ]
             selected = candidates
+        candidate_count = len(selected)
         if max_jobs is not None:
             selected = selected[:max_jobs]
+        _log(
+            show_logs,
+            "jobs_selected",
+            selected=len(selected),
+            candidates=candidate_count,
+            state_found=state_before is not None,
+        )
 
         semaphore = asyncio.Semaphore(concurrency)
 
-        async def bounded(posting: FeedPosting) -> dict[str, Any]:
+        async def bounded(index: int, posting: FeedPosting) -> dict[str, Any]:
             async with semaphore:
-                return await _scrape_one(
+                job_started = time.perf_counter()
+                _log(
+                    show_logs,
+                    "job_started",
+                    job=index,
+                    total=len(selected),
+                    company=posting.company,
+                    role=posting.role,
+                    url=posting.application_url,
+                )
+                result = await _scrape_one(
                     browser=browser,
                     ai_client=ai_client,
                     posting=posting,
                     timeout_ms=int(timeout_seconds * 1_000),
                     model=model,
                     max_html_chars=max_html_chars,
+                    show_logs=show_logs,
                 )
+                _log(
+                    show_logs,
+                    "job_finished",
+                    job=index,
+                    total=len(selected),
+                    company=posting.company,
+                    role=posting.role,
+                    status=result["scrape_status"],
+                    duration_seconds=round(time.perf_counter() - job_started, 2),
+                )
+                return result
 
-        results = await asyncio.gather(*(bounded(posting) for posting in selected))
+        results = await asyncio.gather(
+            *(bounded(index, posting) for index, posting in enumerate(selected, 1))
+        )
     finally:
         if browser is not None:
             await browser.close()
@@ -592,6 +710,25 @@ async def scrape_new_jobs(
             previously_known | all_current_urls,
             {posting.application_url for posting in candidates} - selected_urls,
         )
+        pending_count = len(
+            {posting.application_url for posting in candidates} - selected_urls
+        )
+        _log(
+            show_logs,
+            "state_saved",
+            state_file=str(state_file),
+            pending=pending_count,
+        )
+
+    succeeded = sum(result["scrape_status"] == "ok" for result in results)
+    _log(
+        show_logs,
+        "run_finished",
+        scraped=len(results),
+        succeeded=succeeded,
+        failed=len(results) - succeeded,
+        duration_seconds=round(time.perf_counter() - run_started, 2),
+    )
 
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -619,6 +756,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout-seconds", type=float, default=45)
     parser.add_argument("--headful", action="store_true")
     parser.add_argument("--proxy", help="HTTP or SOCKS5 proxy URL")
+    parser.add_argument(
+        "--show-logs",
+        action="store_true",
+        help="Print live scraper progress to stderr",
+    )
     parser.add_argument(
         "--gemini-model",
         help=f"Gemini model (default: GEMINI_MODEL or {DEFAULT_GEMINI_MODEL})",
@@ -649,6 +791,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 include_all=args.all,
                 gemini_model=args.gemini_model,
                 max_html_chars=args.max_html_chars,
+                show_logs=args.show_logs,
             )
         )
     except (RuntimeError, ValueError) as exc:
