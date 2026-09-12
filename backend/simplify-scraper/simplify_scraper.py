@@ -773,7 +773,7 @@ async def scrape_new_jobs(
                 )
                 return result
 
-        results = await asyncio.gather(*(bounded(posting) for posting in selected))
+        results = await asyncio.gather(*(bounded(i, posting) for i, posting in enumerate(selected, 1)))
 
         ok_results = [r for r in results if r.get("scrape_status") == "ok"]
         spec_semaphore = asyncio.Semaphore(concurrency)
