@@ -16,6 +16,13 @@ printf 'GEMINI_API_KEY=your-key\n' > .env
 python simplify_scraper.py --max-jobs 10
 ```
 
+Add `--show-logs` to print live browser, feed, per-job, Gemini, and state-file
+progress to stderr while the final JSON remains on stdout:
+
+```bash
+python simplify_scraper.py --max-jobs 10 --show-logs
+```
+
 The first stateful run considers the feed's `0d` rows new. Later runs only
 process application URLs absent from `.simplify_scraper_state.json`. If
 `--max-jobs` limits a batch, the remaining new URLs stay queued in that state
@@ -34,9 +41,11 @@ python simplify_scraper.py --all --output jobs.json
 # Some protected sites work better with a visible browser and residential proxy
 python simplify_scraper.py --headful --proxy http://user:pass@host:port
 
-# Override the model or HTML input ceiling
-python simplify_scraper.py --gemini-model gemini-2.5-flash --max-html-chars 750000
+# Override the HTML input ceiling
+python simplify_scraper.py --max-html-chars 750000
 ```
+
+Job extraction always uses `gemini-3.5-flash`.
 
 The command prints a JSON object with `generated_at`, `source_url`,
 `new_posting_count`, and `postings`. Each posting has exactly the fields defined

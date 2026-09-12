@@ -1,12 +1,17 @@
+import io
 import unittest
 import uuid
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from simplify_scraper import (
     AI_EXTRACTION_SCHEMA,
     FeedPosting,
+    _build_parser,
     _error_result,
     _limit_html,
+    _log,
+    main,
     discover_new,
     extract_job_details_with_ai,
     parse_feed,
@@ -27,6 +32,38 @@ FEED = """
 
 
 class ScraperTests(unittest.TestCase):
+    def test_show_logs_flag_is_opt_in(self):
+        self.assertFalse(_build_parser().parse_args([]).show_logs)
+        self.assertTrue(_build_parser().parse_args(["--show-logs"]).show_logs)
+
+    def test_live_logs_are_written_to_stderr_only_when_enabled(self):
+        output = io.StringIO()
+        with patch("simplify_scraper.sys.stderr", output):
+            _log(False, "feed_fetched", active_postings=10)
+            self.assertEqual(output.getvalue(), "")
+            _log(True, "feed_fetched", active_postings=10)
+
+        rendered = output.getvalue()
+        self.assertIn("[simplify-scraper:feed_fetched]", rendered)
+        self.assertIn('"active_postings": 10', rendered)
+
+    def test_cli_forwards_show_logs_to_scraper(self):
+        result = {
+            "generated_at": "2026-09-12T00:00:00+00:00",
+            "source_url": "https://example.test/feed",
+            "new_posting_count": 0,
+            "postings": [],
+        }
+        with (
+            patch("simplify_scraper.scrape_new_jobs", AsyncMock(return_value=result))
+            as scrape,
+            patch("simplify_scraper.sys.stdout", io.StringIO()),
+        ):
+            exit_code = main(["--show-logs"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(scrape.await_args.kwargs["show_logs"])
+
     def test_parse_feed_handles_continuations_flags_locations_and_categories(self):
         postings = parse_feed(FEED)
         self.assertEqual(len(postings), 3)
