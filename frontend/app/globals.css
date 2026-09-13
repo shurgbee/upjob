@@ -262,9 +262,14 @@ a { color: inherit; text-decoration: none; }
 .jobs-table .jobs-empty { height: 120px; color: var(--muted); text-align: center; }
 .action-heading, .jobs-table th.action-heading, .row-action { text-align: center; }
 .action-heading .sort-button { justify-content: center; }
-.row-action a { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-width: 72px; height: 38px; color: white; background: var(--ink); border-radius: 11px; font-size: 0.8rem; font-weight: 700; transition: transform 160ms ease, background 160ms ease; }
-.row-action a:hover { background: var(--blue); transform: translateY(-1px); }
+.row-action a, .row-action .apply-link { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-width: 72px; height: 38px; color: white; background: var(--ink); border: 0; border-radius: 11px; font-size: 0.8rem; font-weight: 700; cursor: pointer; transition: transform 160ms ease, background 160ms ease; }
+.row-action a:hover, .row-action .apply-link:hover { background: var(--blue); transform: translateY(-1px); }
+.row-action .apply-link:disabled { cursor: wait; opacity: 0.65; transform: none; }
 .row-action svg { width: 16px; height: 16px; }
+.job-title-link { color: inherit; text-decoration: none; }
+.job-title-link:hover { color: var(--blue); text-decoration: underline; }
+.application-status { display: inline-flex; align-items: center; min-height: 30px; padding: 0 12px; color: var(--blue-dark); background: var(--blue-soft); border-radius: 999px; font-size: 0.72rem; font-weight: 720; }
+.application-status.is-confirmed { color: #187c63; background: #eaf8f3; }
 .status-pill { display: inline-flex; align-items: center; min-height: 30px; padding: 0 10px; color: var(--blue-dark); background: var(--blue-soft); border-radius: 999px; font-size: 0.72rem; font-weight: 720; }
 .status-pill.follow-up-due { color: #ac4433; background: var(--coral-soft); }
 .status-pill.applied { color: #187c63; background: #eaf8f3; }
