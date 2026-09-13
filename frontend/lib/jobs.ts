@@ -110,8 +110,10 @@ function sourceFromUrl(value: string) {
 
 /**
  * Resolve the signed-in WorkOS user to their app_users.user_id (the uuid the
- * job_applications rows are keyed on). Returns null when unauthenticated or when
- * no app_users row is mapped to this WorkOS id yet.
+ * job_applications rows are keyed on), creating the link on first use. Returns
+ * null only when the request is unauthenticated. Mirrors the resume service's
+ * lazy upsert so a user is linked the first time they hit any authed path,
+ * rather than only after visiting the resume workspace.
  */
 export async function getCurrentUserId(): Promise<string | null> {
   const { user } = await withAuth();
@@ -119,10 +121,11 @@ export async function getCurrentUserId(): Promise<string | null> {
 
   const sql = getSql();
   const rows = await sql<{ user_id: string }[]>`
-    SELECT user_id::text AS user_id
-    FROM app_users
-    WHERE workos_user_id = ${user.id}
-    LIMIT 1
+    INSERT INTO app_users (workos_user_id)
+    VALUES (${user.id})
+    ON CONFLICT (workos_user_id)
+    DO UPDATE SET workos_user_id = EXCLUDED.workos_user_id
+    RETURNING user_id::text AS user_id
   `;
   return rows[0]?.user_id ?? null;
 }
