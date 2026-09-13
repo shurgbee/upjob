@@ -3,6 +3,14 @@ import "server-only";
 import { withAuth } from "@workos-inc/authkit-nextjs";
 import postgres from "postgres";
 
+import type { ApplicationStatus } from "./application-status";
+
+export {
+  APPLICATION_STATUSES,
+  isApplicationStatus,
+  type ApplicationStatus,
+} from "./application-status";
+
 export type Job = {
   id: number;
   specId: string;
@@ -16,6 +24,7 @@ export type Job = {
 };
 
 export type AppliedJob = {
+  id: string;
   specId: string | null;
   source: string;
   title: string;
@@ -38,6 +47,7 @@ type JobSpecRow = {
 };
 
 type AppliedRow = {
+  id: string;
   spec_id: string | null;
   applied_at: Date | null;
   completed: boolean;
@@ -217,6 +227,7 @@ export async function getAppliedJobs(userId: string | null): Promise<AppliedJob[
   const sql = getSql();
   const rows = await sql<AppliedRow[]>`
     SELECT
+      ja.id::text AS id,
       ja.job_spec_id::text AS spec_id,
       ja.aplied_date AS applied_at,
       ja.is_completed AS completed,
@@ -236,6 +247,7 @@ export async function getAppliedJobs(userId: string | null): Promise<AppliedJob[
     const company = asText(row.spec_company).trim() || asText(meta.company).trim();
     const title = asText(row.spec_title) || asText(meta.role, "Untitled role");
     return {
+      id: asText(row.id),
       specId: asText(row.spec_id) || null,
       source: company || (url ? sourceFromUrl(url) : "Unknown"),
       title,
@@ -245,4 +257,23 @@ export async function getAppliedJobs(userId: string | null): Promise<AppliedJob[
       completed: Boolean(row.completed),
     };
   });
+}
+
+/**
+ * Update one application's status for the given user. Scoped by user_id so a
+ * user can only change their own rows. Returns true when a row was updated.
+ */
+export async function updateApplicationStatus(
+  userId: string,
+  applicationId: string,
+  status: ApplicationStatus,
+): Promise<boolean> {
+  const sql = getSql();
+  const rows = await sql`
+    UPDATE job_applications
+    SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('status', ${status}::text)
+    WHERE id = ${applicationId}::uuid AND user_id = ${userId}::uuid
+    RETURNING id
+  `;
+  return rows.length > 0;
 }

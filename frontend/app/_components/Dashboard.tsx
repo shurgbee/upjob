@@ -3,6 +3,10 @@
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
+import {
+  APPLICATION_STATUSES,
+  isApplicationStatus,
+} from "@/lib/application-status";
 import type { AppliedJob, Job } from "@/lib/jobs";
 import { ArrowIcon, BriefcaseIcon, FlameIcon } from "./Icons";
 
@@ -77,6 +81,8 @@ export function Dashboard({
   const [syncError, setSyncError] = useState(false);
   const [applyingId, setApplyingId] = useState<string | null>(null);
   const [applyError, setApplyError] = useState<string | null>(null);
+  const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const currentSort = sort[tab];
   const sortedJobs = useMemo(() => {
@@ -151,6 +157,30 @@ export function Dashboard({
       setApplyError("Could not reach the application tracker.");
     } finally {
       setApplyingId(null);
+    }
+  };
+
+  // Change an application's status, then refresh so the new value persists.
+  const handleStatusChange = async (job: AppliedJob, status: string) => {
+    if (!status || status === job.status) return;
+    setStatusError(null);
+    setStatusUpdatingId(job.id);
+    try {
+      const response = await fetch("/api/applications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: job.id, status }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        setStatusError(formatErrorDetail(data, "Could not update status."));
+        return;
+      }
+      startTransition(() => router.refresh());
+    } catch {
+      setStatusError("Could not reach the application tracker.");
+    } finally {
+      setStatusUpdatingId(null);
     }
   };
 
@@ -300,6 +330,11 @@ export function Dashboard({
             {applyError}
           </p>
         )}
+        {statusError && (
+          <p className="sync-status is-error" role="status">
+            {statusError}
+          </p>
+        )}
         <div className="jobs-table-wrap">
           <table className="jobs-table">
             <caption className="sr-only">
@@ -399,13 +434,31 @@ export function Dashboard({
                       )}
                     </td>
                     <td>
-                      <span
-                        className={`application-status${job.completed ? " is-confirmed" : ""}`}
+                      <select
+                        className={`application-status-select${
+                          isApplicationStatus(job.status) ? "" : " is-unset"
+                        }`}
+                        value={isApplicationStatus(job.status) ? job.status : ""}
+                        disabled={statusUpdatingId === job.id}
+                        onChange={(event) =>
+                          handleStatusChange(job, event.target.value)
+                        }
+                        aria-label={`Status for ${job.title}`}
                       >
-                        {job.completed
-                          ? job.status || "Confirmed"
-                          : "Pending confirmation"}
-                      </span>
+                        {!isApplicationStatus(job.status) && (
+                          <option value="">
+                            {job.status ||
+                              (job.completed
+                                ? "Confirmed — set status"
+                                : "Set status")}
+                          </option>
+                        )}
+                        {APPLICATION_STATUSES.map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                   </tr>
                 ))}
