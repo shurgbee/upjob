@@ -238,6 +238,8 @@ app = FastAPI(
 
 from resume_service import router as resume_router
 app.include_router(resume_router)
+from skills_service import router as skills_router
+app.include_router(skills_router)
 
 # reward-handler: economy, verification, leaderboard, and cron routes under /api.
 app.include_router(create_fastapi_router(dsn=DATABASE_DSN, redis_url=REDIS_URL))

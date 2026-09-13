@@ -2,7 +2,6 @@ import { withAuth } from "@workos-inc/authkit-nextjs";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { BriefcaseIcon, SparkIcon } from "../_components/Icons";
 
 export const metadata: Metadata = {
   title: "Log in",
@@ -26,10 +25,6 @@ export default async function LoginPage() {
           <p className="eyebrow">Your next move</p>
           <h1>Keep every opportunity moving forward.</h1>
           <p>Applications, follow-ups, and rewards stay together in one focused workspace.</p>
-        </div>
-        <div className="login-proof" aria-hidden="true">
-          <div><BriefcaseIcon /><span>4 roles ready</span></div>
-          <div><SparkIcon /><span>7 day streak</span></div>
         </div>
       </section>
 

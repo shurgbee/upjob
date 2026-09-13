@@ -3,15 +3,41 @@
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
-import { BellIcon, BriefcaseIcon, CloseIcon, CoinIcon, DocumentIcon, FlameIcon, GiftIcon, MenuIcon, SparkIcon } from "./Icons";
+import { useState, useSyncExternalStore } from "react";
+import { BellIcon, BriefcaseIcon, CloseIcon, DocumentIcon, FlameIcon, GiftIcon, MenuIcon, MoonIcon, SparkIcon, SunIcon } from "./Icons";
 
 const navigation = [
   { label: "Jobs", href: "/home", icon: BriefcaseIcon },
   { label: "Resume", href: "/resume", icon: DocumentIcon },
   { label: "Rewards", href: "/shop", icon: GiftIcon },
-  { label: "Skills", href: "/home#skills", icon: SparkIcon },
+  { label: "Skills", href: "/skills", icon: SparkIcon },
 ];
+
+type Theme = "light" | "dark";
+const themeStorageKey = "upjob-theme";
+
+function applyTheme(theme: Theme) {
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.style.colorScheme = theme;
+  window.dispatchEvent(new Event("upjob-theme-change"));
+}
+
+function getTheme(): Theme {
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+}
+
+function subscribeToTheme(onStoreChange: () => void) {
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key !== themeStorageKey) return;
+    applyTheme(event.newValue === "dark" ? "dark" : "light");
+  };
+  window.addEventListener("storage", handleStorage);
+  window.addEventListener("upjob-theme-change", onStoreChange);
+  return () => {
+    window.removeEventListener("storage", handleStorage);
+    window.removeEventListener("upjob-theme-change", onStoreChange);
+  };
+}
 
 export function AppShell({ children, showGamification = true }: { children: React.ReactNode; showGamification?: boolean }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -22,6 +48,13 @@ export function AppShell({ children, showGamification = true }: { children: Reac
   const email = user?.email ?? "";
   const displayName = user?.name ?? ([user?.firstName, user?.lastName].filter(Boolean).join(" ") || email || "Account");
   const initials = (user?.firstName?.[0] ?? email[0] ?? "U") + (user?.lastName?.[0] ?? "");
+  const profilePictureUrl = user?.profilePictureUrl;
+  const theme = useSyncExternalStore(subscribeToTheme, getTheme, () => "light");
+
+  function changeTheme(nextTheme: Theme) {
+    window.localStorage.setItem(themeStorageKey, nextTheme);
+    applyTheme(nextTheme);
+  }
 
   async function handleSignOut() {
     setSigningOut(true);
@@ -38,13 +71,21 @@ export function AppShell({ children, showGamification = true }: { children: Reac
           <span>upjob</span><span className="wordmark-smile" aria-hidden="true" />
         </Link>
         <div className="topbar-actions">
-          {showGamification && <Link href="/shop" className="coin-balance" aria-label="12 reward coins, open shop"><span>12</span><CoinIcon /></Link>}
           <button className="icon-button notification-button" type="button" aria-label="Notifications"><BellIcon /><span className="notification-dot" /></button>
           <div className="profile-menu-wrap">
-            <button className="avatar" type="button" aria-label={`Open ${displayName}'s profile`} aria-expanded={profileOpen} onClick={() => setProfileOpen((open) => !open)}>{initials.toUpperCase()}</button>
+            <button className="avatar" type="button" aria-label={`Open ${displayName}'s profile`} aria-expanded={profileOpen} onClick={() => setProfileOpen((open) => !open)}>
+              {profilePictureUrl ? (
+                // Google profile URLs are external and user-specific, so use the source URL directly.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={profilePictureUrl} alt="" referrerPolicy="no-referrer" />
+              ) : initials.toUpperCase()}
+            </button>
             {profileOpen && (
               <div className="profile-menu">
-                <div className="profile-summary"><span className="profile-avatar">{initials.toUpperCase()}</span><div><strong>{displayName}</strong><span>{email}</span></div></div>
+                <div className="profile-summary"><span className="profile-avatar">{profilePictureUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={profilePictureUrl} alt="" referrerPolicy="no-referrer" />
+                ) : initials.toUpperCase()}</span><div><strong>{displayName}</strong><span>{email}</span></div></div>
                 <button type="button" onClick={handleSignOut} disabled={signingOut}>{signingOut ? "Signing out…" : "Sign out"}</button>
               </div>
             )}
@@ -66,7 +107,16 @@ export function AppShell({ children, showGamification = true }: { children: Reac
           ))}
         </nav>
         {showGamification && <div className="drawer-streak"><FlameIcon /><div><strong>7 day streak</strong><span>Keep the momentum going.</span></div></div>}
-        <div className="drawer-account"><span>{displayName}</span><button type="button" onClick={() => void handleSignOut()} disabled={signingOut}>{signingOut ? "Signing out…" : "Sign out"}</button></div>
+        <div className="drawer-footer">
+          <section className="theme-filter" aria-label="Color mode">
+            <span>Color mode</span>
+            <div role="group" aria-label="Choose color mode">
+              <button type="button" className={theme === "light" ? "is-selected" : ""} aria-pressed={theme === "light"} onClick={() => changeTheme("light")}><SunIcon />Light</button>
+              <button type="button" className={theme === "dark" ? "is-selected" : ""} aria-pressed={theme === "dark"} onClick={() => changeTheme("dark")}><MoonIcon />Dark</button>
+            </div>
+          </section>
+          <div className="drawer-account"><span>{displayName}</span><button type="button" onClick={() => void handleSignOut()} disabled={signingOut}>{signingOut ? "Signing out…" : "Sign out"}</button></div>
+        </div>
       </aside>
 
       <main className="page-content">{children}</main>

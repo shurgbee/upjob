@@ -450,6 +450,37 @@
   max-height: 180px;
   overflow: auto;
 }
+
+html[data-theme="dark"] .resume-page button,
+html[data-theme="dark"] .resume-preview-heading a,
+html[data-theme="dark"] .resume-panel,
+html[data-theme="dark"] .resume-empty,
+html[data-theme="dark"] .resume-preview-heading,
+html[data-theme="dark"] .resume-page input:not([type="file"]),
+html[data-theme="dark"] .resume-page textarea,
+html[data-theme="dark"] .resume-page select { background: var(--surface); }
+html[data-theme="dark"] .resume-page .resume-source,
+html[data-theme="dark"] .resume-scan { background: #232335; }
+html[data-theme="dark"] .resume-preview { background: #29293a; }
+html[data-theme="dark"] .resume-empty { border-color: #59609a; }
+html[data-theme="dark"] .resume-page button:not(.resume-primary):not(.resume-accept):not(.resume-reject),
+html[data-theme="dark"] .resume-preview-heading a {
+  color: #f4f4fa;
+  background: #2a2b40;
+  border-color: #62678f;
+}
+html[data-theme="dark"] .resume-page button.resume-accept,
+html[data-theme="dark"] .resume-page button.resume-accept:hover:not(:disabled) {
+  color: #f4fffb;
+  background: #146c54;
+  border-color: #38c99b;
+}
+html[data-theme="dark"] .resume-page button.resume-reject,
+html[data-theme="dark"] .resume-page button.resume-reject:hover:not(:disabled) {
+  color: #fff5f5;
+  background: #8e3544;
+  border-color: #ff7180;
+}
 @media (max-width: 1000px) {
   .resume-grid {
     grid-template-columns: 1fr;
