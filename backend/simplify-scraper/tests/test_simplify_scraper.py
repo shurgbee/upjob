@@ -206,6 +206,28 @@ class AIExtractionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["company"], posting.company)
         self.assertEqual(result["role"], posting.role)
 
+    async def test_job_portal_company_falls_back_to_feed_company(self):
+        posting = parse_feed(FEED)[0]
+        extracted = {
+            "company": "Greenhouse",
+            "role": posting.role,
+            "date_posted": None,
+            "valid_through": None,
+            "employment_type": None,
+            "description": "",
+            "requirements": [],
+            "skills": [],
+        }
+        result = await extract_job_details_with_ai(
+            _FakeAIClient(extracted),
+            posting,
+            "<html></html>",
+            posting.application_url,
+            "gemini-test",
+        )
+
+        self.assertEqual(result["company"], posting.company)
+
     async def test_error_result_uses_same_shape(self):
         posting = parse_feed(FEED)[0]
         error = _error_result(posting, RuntimeError("quota"), posting.application_url)

@@ -74,9 +74,11 @@ async def _embed_single(client: genai.Client, text: str) -> list[float]:
 
 
 async def connect(db_url: str | None = None) -> asyncpg.Connection:
-    url = db_url or os.environ.get("TIGER_DB_URL")
+    # The rest of Upjob uses POSTGRES_URL. Keep TIGER_DB_URL as an optional
+    # explicit override for a separate TigerData instance.
+    url = db_url or os.environ.get("TIGER_DB_URL") or os.environ.get("POSTGRES_URL")
     if not url:
-        raise RuntimeError("TIGER_DB_URL is not set")
+        raise RuntimeError("TIGER_DB_URL or POSTGRES_URL is not set")
     conn = await asyncpg.connect(url)
     await conn.execute("CREATE EXTENSION IF NOT EXISTS vector;")
     await conn.execute(

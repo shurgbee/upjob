@@ -90,7 +90,7 @@ class SkillAnalysisRequest(APIModel):
 
 class ResumeAnalysisRequest(APIModel):
     user_id: UUID = Field(
-        description="User UUID from public.user_economy that owns the saved project.",
+        description="User UUID from public.app_users that owns the saved project.",
     )
     repository: str = Field(
         default=DEFAULT_REPOSITORY,
@@ -182,6 +182,9 @@ app = FastAPI(
     version="1.0.0",
     description="HTTP interface for repo-analyzer and simplify-scraper.",
 )
+
+from resume_service import router as resume_router
+app.include_router(resume_router)
 
 _scraper_lock = asyncio.Lock()
 _scraper_state_file = BASE_DIR / ".simplify_scraper_state.json"
