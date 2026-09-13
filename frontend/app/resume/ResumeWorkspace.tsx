@@ -202,6 +202,7 @@ export function ResumeWorkspace() {
   const [evidenceProject, setEvidenceProject] = useState("");
   const [targetGroup, setTargetGroup] = useState("");
   const [dismissed, setDismissed] = useState<string[]>([]);
+  const [collapsed, setCollapsed] = useState<string[]>([]);
   const [projectDraft, setProjectDraft] = useState<{
     name: string;
     dates: string;
@@ -215,6 +216,7 @@ export function ResumeWorkspace() {
   const saveTask = useRef<Promise<void> | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  const repositoryInput = useRef<HTMLInputElement>(null);
   const activitySnapshot = useRef<Map<string, string>>(new Map());
   const activityReady = useRef(false);
   const parsed = useMemo(() => parseResume(source), [source]);
@@ -402,6 +404,7 @@ export function ResumeWorkspace() {
     kind: Operation["kind"],
     bullets: ResumeBullet[] = [],
     projectId = evidenceProject,
+    previousSuggestions: string[] = [],
   ) {
     await action(async () => {
       await save();
@@ -417,6 +420,7 @@ export function ResumeWorkspace() {
             id: bullet.id,
             text: bullet.text,
           })),
+          previous_suggestions: previousSuggestions,
         }),
       });
       setStatus(
@@ -477,13 +481,14 @@ export function ResumeWorkspace() {
   const currentGroups = parsed.groups;
   const operations = workspace.operations.filter(
     (operation) =>
-      operation.kind !== "compile" && !dismissed.includes(operation.id),
+      operation.kind !== "compile" && operation.status !== "superseded",
   );
 
   useEffect(() => {
     if (!loaded) return;
     const visible = workspace.operations.filter(
-      (operation) => operation.kind !== "compile",
+      (operation) =>
+        operation.kind !== "compile" && operation.status !== "superseded",
     );
     const next = new Map(
       visible.map((operation) => [
@@ -794,6 +799,7 @@ export function ResumeWorkspace() {
                       <label className="resume-label">
                         GitHub repository
                         <input
+                          ref={repositoryInput}
                           required
                           value={repository}
                           onChange={(event) =>
@@ -990,17 +996,19 @@ export function ResumeWorkspace() {
                   >
                     <h2>Activity & suggestions</h2>
                     {operations.map((operation) => {
-                      const suggestions =
-                        operation.result?.suggestions?.filter(
+                      const allSuggestions =
+                        operation.result?.suggestions ?? [];
+                      const suggestions = allSuggestions.filter(
                           (suggestion) =>
                             !dismissed.includes(
                               `${operation.id}:${suggestion.id}`,
                             ),
-                        ) ?? [];
+                        );
                       const stale =
                         dirty || operation.revision !== saved.revision;
                       const inserting =
                         suggestions.length > 0 && !suggestions[0].original;
+                      const isCollapsed = collapsed.includes(operation.id);
                       return (
                         <article
                           className="resume-operation"
@@ -1018,6 +1026,20 @@ export function ResumeWorkspace() {
                             </strong>
                             <span>{operation.status}</span>
                           </div>
+                          {isCollapsed ? (
+                            <button
+                              type="button"
+                              className="resume-dismiss"
+                              onClick={() =>
+                                setCollapsed((old) =>
+                                  old.filter((id) => id !== operation.id),
+                                )
+                              }
+                            >
+                              Unhide
+                            </button>
+                          ) : (
+                            <>
                           {operation.status === "queued" && (
                             <p className="resume-hint">
                               Waiting for the worker. You can continue editing.
@@ -1032,21 +1054,36 @@ export function ResumeWorkspace() {
                             <p role="alert">{operation.error}</p>
                           )}
                           {operation.status === "failed" && (
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() =>
-                                void action(async () => {
-                                  await api("/retry", {
-                                    method: "POST",
-                                    body: JSON.stringify({ id: operation.id }),
-                                  });
-                                  await refresh();
-                                })
-                              }
-                            >
-                              Retry
-                            </button>
+                            <div className="resume-actions">
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() =>
+                                  void action(async () => {
+                                    await api("/retry", {
+                                      method: "POST",
+                                      body: JSON.stringify({ id: operation.id }),
+                                    });
+                                    await refresh();
+                                  })
+                                }
+                              >
+                                Retry
+                              </button>
+                              {operation.kind === "scan" && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setTab("Projects");
+                                    requestAnimationFrame(() =>
+                                      repositoryInput.current?.focus(),
+                                    );
+                                  }}
+                                >
+                                  Add a repository
+                                </button>
+                              )}
+                            </div>
                           )}
                           {suggestions.length > 0 && (
                             <>
@@ -1146,40 +1183,58 @@ export function ResumeWorkspace() {
                                   </div>
                                 </div>
                               ))}
-                              <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => {
-                                  const bullets =
-                                    operation.payload.bullets
-                                      ?.map((item) =>
-                                        parsed.bullets.find(
-                                          (bullet) => bullet.text === item.text,
-                                        ),
-                                      )
-                                      .filter(
-                                        (item): item is ResumeBullet => !!item,
-                                      ) ?? [];
-                                  if (
-                                    operation.payload.bullets?.length &&
-                                    !bullets.length
-                                  ) {
-                                    setError(
-                                      "Select the updated bullets and review them again.",
-                                    );
-                                    return;
-                                  }
-                                  void requestOperation(
-                                    "generate",
-                                    bullets,
-                                    operation.payload.project_id ?? "",
-                                  );
-                                }}
-                              >
-                                Regenerate suggestions
-                              </button>
                             </>
                           )}
+                          {operation.status === "succeeded" &&
+                            operation.kind !== "scan" &&
+                            allSuggestions.length > 0 && (
+                              <div className="resume-actions resume-regenerate">
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => {
+                                    const bullets =
+                                      operation.payload.bullets
+                                        ?.map((item) =>
+                                          parsed.bullets.find(
+                                            (bullet) =>
+                                              bullet.id === item.id &&
+                                              bullet.text === item.text,
+                                          ),
+                                        )
+                                        .filter(
+                                          (item): item is ResumeBullet =>
+                                            !!item,
+                                        ) ?? [];
+                                    if (
+                                      operation.payload.bullets?.length &&
+                                      bullets.length !==
+                                        operation.payload.bullets.length
+                                    ) {
+                                      setError(
+                                        "Select the updated bullets and review them again.",
+                                      );
+                                      return;
+                                    }
+                                    void requestOperation(
+                                      "generate",
+                                      bullets,
+                                      operation.payload.project_id ?? "",
+                                      allSuggestions.map(
+                                        (suggestion) => suggestion.text,
+                                      ),
+                                    );
+                                    setCollapsed((old) =>
+                                      old.includes(operation.id)
+                                        ? old
+                                        : [...old, operation.id],
+                                    );
+                                  }}
+                                >
+                                  Generate suggestions
+                                </button>
+                              </div>
+                            )}
                           {operation.status === "succeeded" &&
                             operation.kind === "scan" && (
                               <p>
@@ -1194,11 +1249,13 @@ export function ResumeWorkspace() {
                               type="button"
                               className="resume-dismiss"
                               onClick={() =>
-                                setDismissed((old) => [...old, operation.id])
+                                setCollapsed((old) => [...old, operation.id])
                               }
                             >
                               Hide
                             </button>
+                          )}
+                            </>
                           )}
                         </article>
                       );
