@@ -102,7 +102,7 @@ export function Dashboard({
       const response = await fetch("/api/gmail/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ hours: 48 }),
+        body: JSON.stringify({ hours: 24 }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -116,7 +116,7 @@ export function Dashboard({
       const matched = data.matched ?? 0;
       const created = data.created ?? 0;
       setSyncMessage(
-        `Synced ${qualified} application email${qualified === 1 ? "" : "s"} from the last 2 hours — ${matched} matched, ${created} added.`,
+        `Synced ${qualified} application email${qualified === 1 ? "" : "s"} from the last 24 hours — ${matched} matched, ${created} added.`,
       );
     } catch {
       setSyncError(true);

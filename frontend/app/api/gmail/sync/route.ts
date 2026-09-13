@@ -9,14 +9,14 @@ import { getCurrentUserId } from "@/lib/jobs";
 const BACKEND_URL = process.env.BACKEND_URL ?? "http://127.0.0.1:8000";
 
 export async function POST(request: Request) {
-  let hours = 2;
+  let hours = 24;
   try {
     const body = await request.json();
     if (typeof body?.hours === "number" && body.hours > 0) {
       hours = body.hours;
     }
   } catch {
-    // No/invalid body: fall back to the default 2-hour window.
+    // No/invalid body: fall back to the default 24-hour window.
   }
 
   const userId = await getCurrentUserId();

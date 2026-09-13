@@ -15,6 +15,7 @@ Pipeline (see backend/gmail-agent/DOCUMENTATION.md):
 from __future__ import annotations
 
 import sys as _sys, pathlib as _pathlib
+
 _sys.path.insert(0, str(_pathlib.Path(__file__).resolve().parents[1]))  # backend/
 
 import argparse
@@ -58,7 +59,9 @@ def _load_env() -> None:
 def _resolve_dsn(dsn: str | None) -> str:
     resolved = dsn or os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
     if not resolved:
-        raise RuntimeError("No database DSN: set DATABASE_URL or POSTGRES_URL, or pass dsn.")
+        raise RuntimeError(
+            "No database DSN: set DATABASE_URL or POSTGRES_URL, or pass dsn."
+        )
     return resolved
 
 
@@ -77,7 +80,7 @@ def _build_metadata(email: dict) -> dict:
 
 
 async def sync_recent_threads(
-    hours: int = 2,
+    hours: int = 24,
     user_id: str | None = None,
     *,
     dsn: str | None = None,
@@ -118,10 +121,14 @@ async def sync_recent_threads(
     conn = await connect(dsn)
     try:
         await ensure_schema(conn)
-        uid = user_id or os.getenv("UPJOB_USER_ID") or await resolve_default_user_id(conn)
+        uid = (
+            user_id or os.getenv("UPJOB_USER_ID") or await resolve_default_user_id(conn)
+        )
         async with conn.transaction():
             candidates = await fetch_open_candidates(conn, uid)
-            decisions = await match_emails(ai_client, qualifying, candidates, model=model)
+            decisions = await match_emails(
+                ai_client, qualifying, candidates, model=model
+            )
             for email in qualifying:
                 thread_id = email["thread_id"]
                 try:
@@ -135,10 +142,14 @@ async def sync_recent_threads(
                     if attached:
                         summary["matched"] += 1
                     else:
-                        await insert_new_row(conn, uid, _build_metadata(email), thread_id)
+                        await insert_new_row(
+                            conn, uid, _build_metadata(email), thread_id
+                        )
                         summary["created"] += 1
                 except Exception as exc:  # noqa: BLE001 - one bad email must not abort the batch
-                    summary["errors"].append({"thread_id": thread_id, "error": str(exc)})
+                    summary["errors"].append(
+                        {"thread_id": thread_id, "error": str(exc)}
+                    )
     finally:
         await conn.close()
     return summary
@@ -168,18 +179,22 @@ try:  # Router-only dependency; keep it optional so the CLI and tests run withou
         parameter and returns 422 ("Field required") for *every* request.
         """
 
-        hours: int = 2
+        hours: int = 24
         user_id: str | None = None
 except ImportError:  # pragma: no cover - only in minimal environments without pydantic
     SyncBody = None  # type: ignore[assignment,misc]
 
 
-def create_fastapi_router(dsn: str | None = None, gemini_api_key: str | None = None) -> Any:
+def create_fastapi_router(
+    dsn: str | None = None, gemini_api_key: str | None = None
+) -> Any:
     """APIRouter exposing the sync + auth-status routes under ``/api``."""
     try:
         from fastapi import APIRouter, HTTPException
     except ImportError as exc:
-        raise RuntimeError("FastAPI and Pydantic must be installed to create router.") from exc
+        raise RuntimeError(
+            "FastAPI and Pydantic must be installed to create router."
+        ) from exc
     if SyncBody is None:
         raise RuntimeError("FastAPI and Pydantic must be installed to create router.")
 
@@ -208,6 +223,7 @@ def create_fastapi_router(dsn: str | None = None, gemini_api_key: str | None = N
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="gmail_agent",
@@ -217,8 +233,12 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
 
     p_sync = subparsers.add_parser("sync", help="Scan the last N hours and reconcile")
-    p_sync.add_argument("--hours", type=int, default=2, help="Look-back window in hours")
-    p_sync.add_argument("--user-id", default=None, help="Application owner user_id (uuid)")
+    p_sync.add_argument(
+        "--hours", type=int, default=24, help="Look-back window in hours"
+    )
+    p_sync.add_argument(
+        "--user-id", default=None, help="Application owner user_id (uuid)"
+    )
 
     subparsers.add_parser("auth", help="Run/verify the Gmail OAuth authorization")
     return parser
