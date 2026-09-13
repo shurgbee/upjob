@@ -21,6 +21,7 @@ export type Job = {
   architecture: string[];
   yearsOfExperience: number;
   opened: string;
+  skillMatch: number;
 };
 
 export type AppliedJob = {
@@ -141,13 +142,33 @@ export async function getCurrentUserId(): Promise<string | null> {
 }
 
 /**
+ * The union of technologies across a user's analyzed repos (projects table),
+ * lowercased for case-insensitive matching against job_specs.technologies.
+ * Empty when the user has no projects or is unauthenticated.
+ */
+async function getUserSkillSet(userId: string | null | undefined): Promise<Set<string>> {
+  if (!userId) return new Set();
+
+  const sql = getSql();
+  const rows = await sql<{ skill: string }[]>`
+    SELECT DISTINCT unnest(technologies) AS skill
+    FROM projects
+    WHERE user_id = ${userId}
+  `;
+  return new Set(rows.map((row) => row.skill.toLowerCase()));
+}
+
+/**
  * Open ("ready to apply") job specs. When userId is given, specs the user has
  * already applied to (any job_applications row for that spec) are excluded so
- * they appear only under "Jobs applied".
+ * they appear only under "Jobs applied". Results are ranked by how well each
+ * job's technologies overlap with the skills demonstrated in the user's
+ * analyzed repos, highest match first.
  */
 export async function getJobSpecs(userId?: string | null): Promise<Job[]> {
   const sql = getSql();
-  const rows = await sql<JobSpecRow[]>`
+  const [rows, skillSet] = await Promise.all([
+    sql<JobSpecRow[]>`
     SELECT
       js.id,
       js.spec_id::text AS spec_id,
@@ -168,22 +189,29 @@ export async function getJobSpecs(userId?: string | null): Promise<Job[]> {
         : sql`TRUE`
     }
     ORDER BY COALESCE(js.publish_date, js.spec_created_at) DESC, js.id DESC
-  `;
+  `,
+    getUserSkillSet(userId),
+  ]);
 
-  return rows.map((row) => {
+  const jobs = rows.map((row) => {
     const url = asText(row.url);
+    const technologies = asStringList(row.technologies);
+    const matched = technologies.filter((tech) => skillSet.has(tech.toLowerCase())).length;
     return {
       id: row.id,
       specId: asText(row.spec_id),
       source: asText(row.company).trim() || sourceFromUrl(url),
       title: asText(row.title, "Untitled role"),
       url,
-      technologies: asStringList(row.technologies),
+      technologies,
       architecture: asStringList(row.architecture),
       yearsOfExperience: typeof row.yoe === "number" ? row.yoe : 0,
       opened: row.opened_at instanceof Date ? row.opened_at.toISOString() : new Date().toISOString(),
+      skillMatch: technologies.length > 0 ? matched / technologies.length : 0,
     };
   });
+
+  return jobs.sort((first, second) => second.skillMatch - first.skillMatch);
 }
 
 /**

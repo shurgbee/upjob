@@ -11,7 +11,7 @@ import type { AppliedJob, Job } from "@/lib/jobs";
 import { ArrowIcon, BriefcaseIcon, FlameIcon } from "./Icons";
 
 type JobTab = "ready" | "applied";
-type SortKey = "source" | "title" | "opened";
+type SortKey = "source" | "title" | "opened" | "skillMatch";
 type SortDirection = "asc" | "desc";
 type SortState = { key: SortKey; direction: SortDirection };
 
@@ -72,7 +72,7 @@ export function Dashboard({
   const router = useRouter();
   const [tab, setTab] = useState<JobTab>("ready");
   const [sort, setSort] = useState<Record<JobTab, SortState>>({
-    ready: { key: "opened", direction: "desc" },
+    ready: { key: "skillMatch", direction: "desc" },
     applied: { key: "opened", direction: "desc" },
   });
   const { user } = useAuth({ ensureSignedIn: true });
@@ -91,9 +91,13 @@ export function Dashboard({
     return [...jobs].sort((first, second) => {
       const firstValue = first[currentSort.key] ?? "";
       const secondValue = second[currentSort.key] ?? "";
-      const result = firstValue.localeCompare(secondValue, undefined, {
-        sensitivity: "base",
-      });
+
+      const result =
+        typeof firstValue === "number" && typeof secondValue === "number"
+          ? firstValue - secondValue
+          : firstValue.toString().localeCompare(secondValue.toString(), undefined, {
+              sensitivity: "base",
+            });
 
       return currentSort.direction === "asc" ? result : -result;
     });
@@ -343,6 +347,7 @@ export function Dashboard({
             <colgroup>
               <col className="company-column" />
               <col className="role-column" />
+              {tab === "ready" && <col className="match-column" />}
               <col className="date-column" />
               <col className="action-column" />
             </colgroup>
@@ -350,6 +355,7 @@ export function Dashboard({
               <tr>
                 {sortableHeader("source", "Source")}
                 {sortableHeader("title", "Role")}
+                {tab === "ready" && sortableHeader("skillMatch", "Match")}
                 {tab === "ready" ? (
                   sortableHeader("opened", "Date opened")
                 ) : (
@@ -379,6 +385,11 @@ export function Dashboard({
                           {job.technologies.slice(0, 3).join(" · ")}
                         </span>
                       )}
+                    </td>
+                    <td>
+                      <span className="skill-match-badge">
+                        {Math.round(job.skillMatch * 100)}%
+                      </span>
                     </td>
                     <td>
                       <time dateTime={job.opened}>
@@ -464,7 +475,7 @@ export function Dashboard({
                 ))}
               {tab === "ready" && sortedJobs.length === 0 && (
                 <tr>
-                  <td className="jobs-empty" colSpan={4}>
+                  <td className="jobs-empty" colSpan={5}>
                     No job matches are available yet.
                   </td>
                 </tr>
