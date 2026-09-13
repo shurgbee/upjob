@@ -8,12 +8,12 @@ import { BellIcon, BriefcaseIcon, CloseIcon, CoinIcon, DocumentIcon, FlameIcon, 
 
 const navigation = [
   { label: "Jobs", href: "/home", icon: BriefcaseIcon },
-  { label: "Resume", href: "/home#resume", icon: DocumentIcon },
+  { label: "Resume", href: "/resume", icon: DocumentIcon },
   { label: "Rewards", href: "/shop", icon: GiftIcon },
   { label: "Skills", href: "/home#skills", icon: SparkIcon },
 ];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children, showGamification = true }: { children: React.ReactNode; showGamification?: boolean }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -38,7 +38,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <span>upjob</span><span className="wordmark-smile" aria-hidden="true" />
         </Link>
         <div className="topbar-actions">
-          <Link href="/shop" className="coin-balance" aria-label="12 reward coins, open shop"><span>12</span><CoinIcon /></Link>
+          {showGamification && <Link href="/shop" className="coin-balance" aria-label="12 reward coins, open shop"><span>12</span><CoinIcon /></Link>}
           <button className="icon-button notification-button" type="button" aria-label="Notifications"><BellIcon /><span className="notification-dot" /></button>
           <div className="profile-menu-wrap">
             <button className="avatar" type="button" aria-label={`Open ${displayName}'s profile`} aria-expanded={profileOpen} onClick={() => setProfileOpen((open) => !open)}>{initials.toUpperCase()}</button>
@@ -59,13 +59,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <button className="icon-button" type="button" onClick={() => setMenuOpen(false)} aria-label="Close navigation"><CloseIcon /></button>
         </div>
         <nav className="drawer-nav" aria-label="Main navigation">
-          {navigation.map(({ label, href, icon: Icon }) => (
+          {navigation.filter(({ href }) => showGamification || href !== "/shop").map(({ label, href, icon: Icon }) => (
             <Link className={pathname === href ? "is-active" : ""} href={href} key={label} onClick={() => setMenuOpen(false)}>
               <Icon /><span>{label}</span>
             </Link>
           ))}
         </nav>
-        <div className="drawer-streak"><FlameIcon /><div><strong>7 day streak</strong><span>Keep the momentum going.</span></div></div>
+        {showGamification && <div className="drawer-streak"><FlameIcon /><div><strong>7 day streak</strong><span>Keep the momentum going.</span></div></div>}
         <div className="drawer-account"><span>{displayName}</span><button type="button" onClick={() => void handleSignOut()} disabled={signingOut}>{signingOut ? "Signing out…" : "Sign out"}</button></div>
       </aside>
 

@@ -1,36 +1,44 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# UpJob frontend
 
-## Getting Started
+UpJob is a Next.js 16 App Router project with WorkOS AuthKit authentication.
 
-First, run the development server:
+## Local setup
+
+Install dependencies:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+bun install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Copy the environment template and add the credentials from your WorkOS staging environment:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+cp .env.example .env.local
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Generate a cookie password with `openssl rand -base64 24`. Keep `WORKOS_API_KEY` and `WORKOS_COOKIE_PASSWORD` server-side and out of source control.
 
-## Learn More
+In **WorkOS Dashboard -> Redirects**, configure:
 
-To learn more about Next.js, take a look at the following resources:
+- Redirect URI: `http://localhost:3000/callback`
+- Sign-in URL: `http://localhost:3000/sign-in`
+- Logout redirect: `http://localhost:3000/login`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Enable the OAuth providers you want to offer under the AuthKit authentication settings. The hosted AuthKit screen automatically displays enabled email, password, OAuth, and SSO methods; no provider-specific frontend code is required.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Start the app:
 
-## Deploy on Vercel
+```bash
+bun run dev
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Open `http://localhost:3000`. Signed-out users land on `/login`; successful authentication returns them to `/home`. `/home` and `/shop` require an authenticated WorkOS session.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Authentication structure
+
+- `proxy.ts` refreshes sessions and protects authenticated routes.
+- `app/sign-in/route.ts` and `app/sign-up/route.ts` initiate hosted AuthKit flows.
+- `app/callback/route.ts` exchanges the OAuth code and creates the encrypted session cookie.
+- `AuthenticatedShell` verifies the session again during server rendering and seeds `AuthKitProvider` without exposing the access token.
+
+For production, create production WorkOS credentials and register the deployment's HTTPS callback, sign-in, and logout URLs before updating its environment variables.

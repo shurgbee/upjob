@@ -6,6 +6,7 @@ Offline tests with stubbed Gemini SDK and no network calls.
 from __future__ import annotations
 
 import sys, pathlib
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))  # resume-tailor
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3]))  # backend
 
@@ -24,9 +25,7 @@ class FakeModels:
     def __init__(self, ai_client: "FakeAIClient"):
         self.ai_client = ai_client
 
-    async def generate_content(
-        self, *, model: str, contents: str, config: dict
-    ) -> Any:
+    async def generate_content(self, *, model: str, contents: str, config: dict) -> Any:
         """Record the call and return a fake response."""
         self.ai_client.last_system_instruction = config.get("system_instruction")
         self.ai_client.last_prompt = contents
@@ -36,9 +35,8 @@ class FakeModels:
 
         response = MagicMock()
         response.parsed = {
-            "bullets": [
-                "Accomplished X as measured by Y by doing Z"
-            ] * BULLETS_PER_PROJECT
+            "bullets": ["Accomplished X as measured by Y by doing Z"]
+            * BULLETS_PER_PROJECT
         }
         response.text = None
         return response
@@ -139,7 +137,9 @@ class TestGenerateBullets(unittest.TestCase):
 
         async def run():
             ai_client = FakeAIClient()
-            result = await generation.generate_bullets(ai_client, self.job, self.project)
+            result = await generation.generate_bullets(
+                ai_client, self.job, self.project
+            )
             self.assertIsInstance(result, list)
             self.assertTrue(all(isinstance(b, str) for b in result))
 
@@ -150,7 +150,9 @@ class TestGenerateBullets(unittest.TestCase):
 
         async def run():
             ai_client = FakeAIClient()
-            result = await generation.generate_bullets(ai_client, self.job, self.project)
+            result = await generation.generate_bullets(
+                ai_client, self.job, self.project
+            )
             self.assertEqual(len(result), BULLETS_PER_PROJECT)
 
         asyncio.run(run())
@@ -269,14 +271,12 @@ class TestTailorProject(unittest.TestCase):
             async def fake_generate_json(
                 client, *, model, prompt, schema, system_instruction, **kwargs
             ):
-                return {
-                    "bullets": [
-                        "Accomplished X as measured by Y by doing Z"
-                    ] * 3
-                }
+                return {"bullets": ["Accomplished X as measured by Y by doing Z"] * 3}
 
             with patch("common.gemini.generate_json", fake_generate_json):
-                result = await generation.tailor_project(ai_client, self.job, self.project)
+                result = await generation.tailor_project(
+                    ai_client, self.job, self.project
+                )
                 self.assertIsNotNone(result.bullets)
                 self.assertTrue(len(result.bullets) > 0)
 
@@ -294,7 +294,9 @@ class TestTailorProject(unittest.TestCase):
                 return {"bullets": ["Accomplished X"] * 3}
 
             with patch("common.gemini.generate_json", fake_generate_json):
-                result = await generation.tailor_project(ai_client, self.job, self.project)
+                result = await generation.tailor_project(
+                    ai_client, self.job, self.project
+                )
                 self.assertIs(result, self.project)
 
         asyncio.run(run())
@@ -330,7 +332,9 @@ class TestGenerateAll(unittest.TestCase):
             fake_google = MagicMock()
             fake_google.genai = fake_genai_module
 
-            with patch.dict(sys.modules, {"google": fake_google, "google.genai": fake_genai_module}):
+            with patch.dict(
+                sys.modules, {"google": fake_google, "google.genai": fake_genai_module}
+            ):
                 with patch("generation.tailor_project", fake_tailor_project):
                     results = await generation.generate_all(
                         self.job, self.projects, api_key="test-key"
@@ -359,7 +363,9 @@ class TestGenerateAll(unittest.TestCase):
             fake_google = MagicMock()
             fake_google.genai = fake_genai_module
 
-            with patch.dict(sys.modules, {"google": fake_google, "google.genai": fake_genai_module}):
+            with patch.dict(
+                sys.modules, {"google": fake_google, "google.genai": fake_genai_module}
+            ):
                 with patch("generation.tailor_project", fake_tailor_project):
                     results = await generation.generate_all(
                         self.job, self.projects, api_key="test-key"
@@ -398,7 +404,9 @@ class TestGenerateAll(unittest.TestCase):
             fake_google = MagicMock()
             fake_google.genai = fake_genai_module
 
-            with patch.dict(sys.modules, {"google": fake_google, "google.genai": fake_genai_module}):
+            with patch.dict(
+                sys.modules, {"google": fake_google, "google.genai": fake_genai_module}
+            ):
                 with patch("generation.tailor_project", fake_tailor_project):
                     results = await generation.generate_all(
                         self.job, self.projects, api_key="test-key", max_concurrency=2

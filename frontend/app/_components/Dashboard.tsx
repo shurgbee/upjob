@@ -2,36 +2,18 @@
 
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import { useMemo, useState } from "react";
+import type { Job } from "@/lib/jobs";
 import { ArrowIcon, BriefcaseIcon, FlameIcon } from "./Icons";
 
-type Job = {
-  company: string;
-  role: string;
-  opened: string;
-  status?: string;
-};
-
 type JobTab = "ready" | "applied";
-type SortKey = "company" | "role" | "opened" | "status";
+type SortKey = "source" | "title" | "opened";
 type SortDirection = "asc" | "desc";
 type SortState = { key: SortKey; direction: SortDirection };
-
-const readyJobs: Job[] = [
-  { company: "Northstar Labs", role: "Frontend Engineer", opened: "2026-09-11" },
-  { company: "Orbit Health", role: "Product Engineer", opened: "2026-09-10" },
-  { company: "Canvas AI", role: "Software Engineer", opened: "2026-09-09" },
-  { company: "Signalworks", role: "UI Engineer", opened: "2026-09-08" },
-];
-
-const appliedJobs: Job[] = [
-  { company: "Maple Systems", role: "React Developer", opened: "2026-09-09", status: "In review" },
-  { company: "Frame Financial", role: "Frontend Engineer", opened: "2026-09-06", status: "Applied" },
-  { company: "Sparrow", role: "Product Developer", opened: "2026-09-04", status: "Follow-up due" },
-];
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "numeric",
+  year: "numeric",
   timeZone: "UTC",
 });
 
@@ -39,7 +21,7 @@ function SortIndicator({ active, direction }: { active: boolean; direction: Sort
   return <span className={`sort-indicator${active ? " is-active" : ""}`} aria-hidden="true">{active && direction === "desc" ? "↓" : "↑"}</span>;
 }
 
-export function Dashboard() {
+export function Dashboard({ jobs: readyJobs }: { jobs: Job[] }) {
   const [tab, setTab] = useState<JobTab>("ready");
   const [sort, setSort] = useState<Record<JobTab, SortState>>({
     ready: { key: "opened", direction: "desc" },
@@ -49,9 +31,10 @@ export function Dashboard() {
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncError, setSyncError] = useState(false);
-  const jobs = tab === "ready" ? readyJobs : appliedJobs;
   const currentSort = sort[tab];
   const sortedJobs = useMemo(() => {
+    const jobs = tab === "ready" ? readyJobs : [];
+
     return [...jobs].sort((first, second) => {
       const firstValue = first[currentSort.key] ?? "";
       const secondValue = second[currentSort.key] ?? "";
@@ -59,7 +42,7 @@ export function Dashboard() {
 
       return currentSort.direction === "asc" ? result : -result;
     });
-  }, [currentSort, jobs]);
+  }, [currentSort, readyJobs, tab]);
   const firstName = user?.firstName ?? user?.name?.split(" ")[0] ?? "there";
 
   const handleSync = async () => {
@@ -124,8 +107,8 @@ export function Dashboard() {
 
       <section className="stat-grid" aria-label="Job search overview">
         <article className="stat-card streak-card"><div className="stat-icon flame"><FlameIcon /></div><div><span className="stat-label">Current streak</span><strong>7 <small>days</small></strong></div><span className="streak-note">Personal best</span></article>
-        <article className="stat-card"><div className="stat-icon"><BriefcaseIcon /></div><div><span className="stat-label">Jobs applied</span><strong>24</strong></div><span className="stat-change">+6 this week</span></article>
-        <article className="stat-card"><div className="stat-icon"><span className="pending-mark">12</span></div><div><span className="stat-label">Jobs pending</span><strong>4</strong></div><span className="stat-change">Ready to review</span></article>
+        <article className="stat-card"><div className="stat-icon"><BriefcaseIcon /></div><div><span className="stat-label">Jobs applied</span><strong>0</strong></div><span className="stat-change">Track applications soon</span></article>
+        <article className="stat-card"><div className="stat-icon"><span className="pending-mark">{readyJobs.length}</span></div><div><span className="stat-label">Job matches</span><strong>{readyJobs.length}</strong></div><span className="stat-change">Ready to review</span></article>
       </section>
 
       <section className="jobs-panel" aria-labelledby="jobs-heading">
@@ -138,8 +121,8 @@ export function Dashboard() {
               </button>
             )}
             <div className="job-tabs" role="tablist" aria-label="Job lists">
-              <button type="button" role="tab" aria-selected={tab === "ready"} onClick={() => setTab("ready")}>Jobs to apply <span>4</span></button>
-              <button type="button" role="tab" aria-selected={tab === "applied"} onClick={() => setTab("applied")}>Jobs applied <span>24</span></button>
+              <button type="button" role="tab" aria-selected={tab === "ready"} onClick={() => setTab("ready")}>Jobs to apply <span>{readyJobs.length}</span></button>
+              <button type="button" role="tab" aria-selected={tab === "applied"} onClick={() => setTab("applied")}>Jobs applied <span>0</span></button>
             </div>
           </div>
         </div>
@@ -155,23 +138,26 @@ export function Dashboard() {
             </colgroup>
             <thead>
               <tr>
-                {sortableHeader("company", "Company")}
-                {sortableHeader("role", "Role")}
+                {sortableHeader("source", "Source")}
+                {sortableHeader("title", "Role")}
                 {sortableHeader("opened", "Date opened")}
-                {tab === "applied" ? sortableHeader("status", "Status", "action-heading") : <th scope="col" className="action-heading">Apply</th>}
+                <th scope="col" className="action-heading">Apply</th>
               </tr>
             </thead>
             <tbody>
               {sortedJobs.map((job) => (
-                <tr key={`${job.company}-${job.role}`}>
-                  <td><span className="company-cell"><span className="company-mark">{job.company.charAt(0)}</span>{job.company}</span></td>
-                  <td>{job.role}</td>
-                  <td><time dateTime={job.opened}>{dateFormatter.format(new Date(`${job.opened}T00:00:00Z`))}</time></td>
+                <tr key={job.id}>
+                  <td><span className="company-cell"><span className="company-mark">{job.source.charAt(0)}</span>{job.source}</span></td>
+                  <td><span className="job-title">{job.title}</span>{job.technologies.length > 0 && <span className="job-technologies">{job.technologies.slice(0, 3).join(" · ")}</span>}</td>
+                  <td><time dateTime={job.opened}>{dateFormatter.format(new Date(job.opened))}</time></td>
                   <td className="row-action">
-                    {job.status ? <span className={`status-pill ${job.status.toLowerCase().replaceAll(" ", "-")}`}>{job.status}</span> : <a href={`https://www.google.com/search?q=${encodeURIComponent(`${job.company} ${job.role}`)}`} target="_blank" rel="noreferrer" aria-label={`Apply for ${job.role} at ${job.company}`}>Apply <ArrowIcon /></a>}
+                    <a href={job.url} target="_blank" rel="noreferrer" aria-label={`Apply for ${job.title}`}>Apply <ArrowIcon /></a>
                   </td>
                 </tr>
               ))}
+              {sortedJobs.length === 0 && (
+                <tr><td className="jobs-empty" colSpan={4}>{tab === "ready" ? "No job matches are available yet." : "No applications tracked yet."}</td></tr>
+              )}
             </tbody>
           </table>
         </div>

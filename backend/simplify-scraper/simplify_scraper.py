@@ -13,6 +13,7 @@ import json
 import os
 import re
 import sys
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -26,8 +27,25 @@ DEFAULT_SOURCE_URL = (
     "Summer2027-Internships/refs/heads/dev/README.md"
 )
 DEFAULT_STATE_FILE = Path(".simplify_scraper_state.json")
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
+GEMINI_MODEL = "gemini-3.5-flash"
 DEFAULT_MAX_HTML_CHARS = 1_000_000
+
+_LOG_COLORS = {
+    "run_started": "\033[96m",
+    "browser_launched": "\033[94m",
+    "feed_fetched": "\033[94m",
+    "jobs_selected": "\033[93m",
+    "job_started": "\033[95m",
+    "page_loaded": "\033[94m",
+    "html_prepared": "\033[94m",
+    "ai_extraction_started": "\033[95m",
+    "job_finished": "\033[92m",
+    "job_failed": "\033[91m",
+    "state_saved": "\033[94m",
+    "run_finished": "\033[92m",
+}
+_ANSI_RESET = "\033[0m"
 
 FLAG_SYMBOLS = {
     "🔥": "faang_plus",
@@ -35,6 +53,27 @@ FLAG_SYMBOLS = {
     "🇺🇸": "us_citizenship_required",
     "🎓": "advanced_degree_required",
     "🔒": "closed",
+}
+
+JOB_SPEC_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "technologies": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Individual tools, languages, frameworks, and libraries mentioned (e.g. Python, FastAPI, React, PostgreSQL). One item per technology.",
+        },
+        "architecture": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Architectural components and patterns used in the project (e.g. ETL Pipelines, Pub Sub, Microservices, REST API, Event Driven, Low Latency Systems). One item per pattern.",
+        },
+        "yoe": {
+            "type": "integer",
+            "description": "Minimum years of experience required. 0 if not specified or entry-level.",
+        },
+    },
+    "required": ["technologies", "architecture", "yoe"],
 }
 
 AI_EXTRACTION_SCHEMA: dict[str, Any] = {
@@ -98,6 +137,25 @@ class FeedPosting:
     simplify_url: str | None
     age_days: int | None
     flags: list[str]
+
+
+def _write_scraper_event(event: str, **details: Any) -> None:
+    """Write one structured progress event without contaminating JSON stdout."""
+    rendered = json.dumps(details, ensure_ascii=False, default=str)
+    if len(rendered) > 4_000:
+        rendered = rendered[:4_000] + "… [truncated]"
+
+    timestamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
+    prefix = f"[{timestamp}] [simplify-scraper:{event}]"
+    if sys.stderr.isatty():
+        color = _LOG_COLORS.get(event, "\033[97m")
+        prefix = f"{color}{prefix}{_ANSI_RESET}"
+    print(f"{prefix} {rendered}", file=sys.stderr, flush=True)
+
+
+def _log(show_logs: bool, event: str, **details: Any) -> None:
+    if show_logs:
+        _write_scraper_event(event, **details)
 
 
 class _TableParser(HTMLParser):
@@ -244,6 +302,33 @@ def _string_list(value: Any) -> list[str]:
     return list(dict.fromkeys(cleaned))
 
 
+_JOB_PORTAL_COMPANY_NAMES = {
+    "ashby",
+    "greenhouse",
+    "greenhouse software",
+    "icims",
+    "jobvite",
+    "lever",
+    "oracle",
+    "oracle cloud",
+    "smartrecruiters",
+    "successfactors",
+    "taleo",
+    "workday",
+}
+
+
+def _company_from_extraction(posting: FeedPosting, extracted: dict[str, Any]) -> str:
+    """Use the feed employer when extraction mistakes an ATS for the company."""
+    extracted_company = _string_or_none(extracted.get("company"))
+    if (
+        extracted_company
+        and extracted_company.casefold() not in _JOB_PORTAL_COMPANY_NAMES
+    ):
+        return extracted_company
+    return posting.company
+
+
 def _job_result(
     posting: FeedPosting,
     extracted: dict[str, Any],
@@ -252,7 +337,7 @@ def _job_result(
     """Build exactly the per-posting shape described by sample.json."""
     return {
         "id": str(uuid.uuid4()),
-        "company": _string_or_none(extracted.get("company")) or posting.company,
+        "company": _company_from_extraction(posting, extracted),
         "role": _string_or_none(extracted.get("role")) or posting.role,
         "category": posting.category,
         "application_url": posting.application_url,
@@ -307,8 +392,7 @@ def _limit_html(page_html: str, max_chars: int) -> str:
 
 async def _clean_page_html(page: Any, max_chars: int) -> str:
     """Return rendered HTML with executable and presentation noise removed."""
-    page_html = await page.evaluate(
-        """() => {
+    page_html = await page.evaluate("""() => {
             const root = document.documentElement.cloneNode(true);
             root.querySelectorAll(
                 'script:not([type="application/ld+json"]), style, noscript, svg, canvas, iframe'
@@ -325,8 +409,7 @@ async def _clean_page_html(page: Any, max_chars: int) -> str:
                 }
             });
             return '<!doctype html>\\n' + root.outerHTML;
-        }"""
-    )
+        }""")
     return _limit_html(page_html, max_chars)
 
 
@@ -349,6 +432,10 @@ Extraction rules:
 - Use ISO 8601 for date_posted and valid_through when a date is present; otherwise null.
 - Keep description as clean plain text that describes the role.
 - Put each distinct qualification in requirements.
+- Return the employer, never the applicant-tracking system or job board. In
+  particular, names such as Greenhouse, Workday, Oracle Cloud, Taleo, Lever,
+  Ashby, and iCIMS are hosting platforms, not employers. Use the feed hint if
+  the page identifies only one of those platforms.
 - Skills should contain concise, explicitly requested technologies or competencies.
 - Return empty strings, empty arrays, or nulls when the page does not provide a field.
 
@@ -381,6 +468,65 @@ Feed hints (use only to disambiguate the page):
     if not isinstance(extracted, dict):
         raise RuntimeError("Gemini did not return a JSON object")
     return _job_result(posting, extracted, scraped_url)
+
+
+async def generate_job_spec(
+    ai_client: Any,
+    posting: dict[str, Any],
+    model: str,
+) -> dict[str, Any]:
+    """Second AI pass: distill a scraped posting into a normalised job spec."""
+    prompt = f"""You are a job-posting analyst. Given the job details below, extract:
+
+1. **technologies** — every individual tool, language, framework, or library mentioned.
+   Each item should be a single technology (e.g. "Python", "FastAPI", "PostgreSQL").
+2. **architecture** — architectural components and patterns the role involves.
+   Each item should be a single pattern (e.g. "ETL Pipelines", "Pub Sub", "Microservices").
+3. **yoe** — the minimum years of experience required. Use 0 for entry-level or when unspecified.
+
+Only include items explicitly mentioned or strongly implied by the posting.
+
+Company: {posting.get("company", "")}
+Role: {posting.get("role", "")}
+Description: {posting.get("description", "")}
+Skills: {", ".join(posting.get("skills", []))}
+Requirements: {", ".join(posting.get("requirements", []))}"""
+
+    response = await ai_client.models.generate_content(
+        model=model,
+        contents=prompt,
+        config={
+            "response_mime_type": "application/json",
+            "response_json_schema": JOB_SPEC_SCHEMA,
+            "temperature": 0,
+            "max_output_tokens": 4096,
+        },
+    )
+    extracted = getattr(response, "parsed", None)
+    if not isinstance(extracted, dict):
+        response_text = getattr(response, "text", None)
+        if not response_text:
+            raise RuntimeError("Gemini returned an empty response for job spec")
+        extracted = json.loads(response_text)
+    if not isinstance(extracted, dict):
+        raise RuntimeError("Gemini did not return a JSON object for job spec")
+
+    now = datetime.now(timezone.utc).isoformat()
+    return {
+        "title": posting.get("role", ""),
+        "url": posting.get("application_url", ""),
+        "company": posting.get("company", ""),
+        "category": posting.get("category", ""),
+        "employment_type": posting.get("employment_type"),
+        "description": posting.get("description", ""),
+        "requirements": posting.get("requirements", []),
+        "technologies": extracted.get("technologies", []),
+        "architecture": extracted.get("architecture", []),
+        "yoe": extracted.get("yoe", 0),
+        "publish_date": posting.get("date_posted"),
+        "spec_created_at": now,
+        "spec_updated_at": now,
+    }
 
 
 def _load_state(path: Path) -> dict[str, set[str]] | None:
@@ -436,6 +582,7 @@ async def _scrape_one(
     timeout_ms: int,
     model: str,
     max_html_chars: int,
+    show_logs: bool = False,
 ) -> dict[str, Any]:
     page = await browser.new_page()
     scraped_url = posting.application_url
@@ -448,7 +595,28 @@ async def _scrape_one(
         # Give client-rendered job boards a brief chance to populate their DOM.
         await asyncio.sleep(1)
         scraped_url = page.url
+        _log(
+            show_logs,
+            "page_loaded",
+            company=posting.company,
+            role=posting.role,
+            url=scraped_url,
+        )
         page_html = await _clean_page_html(page, max_html_chars)
+        _log(
+            show_logs,
+            "html_prepared",
+            company=posting.company,
+            role=posting.role,
+            characters=len(page_html),
+        )
+        _log(
+            show_logs,
+            "ai_extraction_started",
+            company=posting.company,
+            role=posting.role,
+            model=model,
+        )
         return await extract_job_details_with_ai(
             ai_client=ai_client,
             posting=posting,
@@ -457,6 +625,13 @@ async def _scrape_one(
             model=model,
         )
     except Exception as exc:  # One bad ATS must not discard the rest of the batch.
+        _log(
+            show_logs,
+            "job_failed",
+            company=posting.company,
+            role=posting.role,
+            error=f"{type(exc).__name__}: {exc}",
+        )
         return _error_result(posting, exc, scraped_url)
     finally:
         try:
@@ -477,14 +652,15 @@ async def scrape_new_jobs(
     proxy: str | None = None,
     include_all: bool = False,
     gemini_api_key: str | None = None,
-    gemini_model: str | None = None,
     max_html_chars: int = DEFAULT_MAX_HTML_CHARS,
+    show_logs: bool = False,
 ) -> dict[str, Any]:
     """Fetch the feed, scrape newly discovered jobs, and return JSON-ready data.
 
     Pass ``state_file=None`` for a stateless call. On the first stateful run,
     listings no older than ``first_run_max_age_days`` are considered new.
-    Later runs use application URLs as durable identities.
+    Later runs use application URLs as durable identities. Set ``show_logs`` to
+    print live progress to stderr without changing the returned data.
     """
     if concurrency < 1:
         raise ValueError("concurrency must be at least 1")
@@ -492,6 +668,18 @@ async def scrape_new_jobs(
         raise ValueError("max_jobs cannot be negative")
     if max_html_chars < 10_000:
         raise ValueError("max_html_chars must be at least 10000")
+
+    run_started = time.perf_counter()
+    _log(
+        show_logs,
+        "run_started",
+        source_url=source_url,
+        state_file=str(state_file) if state_file is not None else None,
+        max_jobs=max_jobs,
+        concurrency=concurrency,
+        headless=headless,
+        include_all=include_all,
+    )
 
     # Import lazily so feed parsing and unit tests need neither browser nor AI SDK.
     try:
@@ -507,7 +695,7 @@ async def scrape_new_jobs(
     api_key = gemini_api_key or os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY is not set in the environment or .env")
-    model = gemini_model or os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+    model = GEMINI_MODEL
 
     launch_options: dict[str, Any] = {"headless": headless}
     if proxy:
@@ -522,6 +710,7 @@ async def scrape_new_jobs(
     candidates: list[FeedPosting] = []
     try:
         browser = await launch_async(**launch_options)
+        _log(show_logs, "browser_launched", headless=headless, proxy=bool(proxy))
         feed_page = await browser.new_page()
         try:
             await feed_page.goto(
@@ -540,6 +729,12 @@ async def scrape_new_jobs(
             raise RuntimeError(
                 "No active job rows were found; the README format may have changed"
             )
+        _log(
+            show_logs,
+            "feed_fetched",
+            source_url=source_url,
+            active_postings=len(feed_postings),
+        )
 
         if include_all:
             selected = feed_postings
@@ -563,23 +758,76 @@ async def scrape_new_jobs(
                 if posting.application_url in candidate_urls
             ]
             selected = candidates
+        candidate_count = len(selected)
         if max_jobs is not None:
             selected = selected[:max_jobs]
+        _log(
+            show_logs,
+            "jobs_selected",
+            selected=len(selected),
+            candidates=candidate_count,
+            state_found=state_before is not None,
+        )
 
         semaphore = asyncio.Semaphore(concurrency)
 
-        async def bounded(posting: FeedPosting) -> dict[str, Any]:
+        async def bounded(index: int, posting: FeedPosting) -> dict[str, Any]:
             async with semaphore:
-                return await _scrape_one(
+                job_started = time.perf_counter()
+                _log(
+                    show_logs,
+                    "job_started",
+                    job=index,
+                    total=len(selected),
+                    company=posting.company,
+                    role=posting.role,
+                    url=posting.application_url,
+                )
+                result = await _scrape_one(
                     browser=browser,
                     ai_client=ai_client,
                     posting=posting,
                     timeout_ms=int(timeout_seconds * 1_000),
                     model=model,
                     max_html_chars=max_html_chars,
+                    show_logs=show_logs,
                 )
+                _log(
+                    show_logs,
+                    "job_finished",
+                    job=index,
+                    total=len(selected),
+                    company=posting.company,
+                    role=posting.role,
+                    status=result["scrape_status"],
+                    duration_seconds=round(time.perf_counter() - job_started, 2),
+                )
+                return result
 
-        results = await asyncio.gather(*(bounded(posting) for posting in selected))
+        results = await asyncio.gather(*(bounded(i, posting) for i, posting in enumerate(selected, 1)))
+
+        ok_results = [r for r in results if r.get("scrape_status") == "ok"]
+        spec_semaphore = asyncio.Semaphore(concurrency)
+
+        async def spec_bounded(posting_data: dict[str, Any]) -> dict[str, Any]:
+            async with spec_semaphore:
+                try:
+                    return await generate_job_spec(ai_client, posting_data, model)
+                except Exception as exc:
+                    now = datetime.now(timezone.utc).isoformat()
+                    return {
+                        "title": posting_data.get("role", ""),
+                        "url": posting_data.get("application_url", ""),
+                        "technologies": [],
+                        "architecture": [],
+                        "yoe": 0,
+                        "publish_date": posting_data.get("date_posted"),
+                        "spec_created_at": now,
+                        "spec_updated_at": now,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+
+        job_specs = await asyncio.gather(*(spec_bounded(r) for r in ok_results))
     finally:
         if browser is not None:
             await browser.close()
@@ -594,12 +842,53 @@ async def scrape_new_jobs(
             previously_known | all_current_urls,
             {posting.application_url for posting in candidates} - selected_urls,
         )
+        pending_count = len(
+            {posting.application_url for posting in candidates} - selected_urls
+        )
+        _log(
+            show_logs,
+            "state_saved",
+            state_file=str(state_file),
+            pending=pending_count,
+        )
+
+    succeeded = sum(result["scrape_status"] == "ok" for result in results)
+    _log(
+        show_logs,
+        "run_finished",
+        scraped=len(results),
+        succeeded=succeeded,
+        failed=len(results) - succeeded,
+        duration_seconds=round(time.perf_counter() - run_started, 2),
+    )
+
+    specs_list = list(job_specs)
+    # A listing without inferred architecture is still a valid listing. The
+    # store writes it with a null embedding, so it remains visible in the jobs
+    # dashboard while naturally being excluded from architecture similarity.
+    valid_specs = [s for s in specs_list if "error" not in s]
+    if valid_specs:
+        try:
+            from job_store import connect, init_db, upsert_job_specs
+
+            db_conn = await connect()
+            try:
+                await init_db(db_conn)
+                await upsert_job_specs(db_conn, valid_specs, gemini_api_key=api_key)
+            finally:
+                await db_conn.close()
+        except Exception as exc:
+            print(
+                json.dumps({"warning": f"Failed to store in TigerData: {exc}"}),
+                file=sys.stderr,
+            )
 
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "source_url": source_url,
         "new_posting_count": len(results),
         "postings": results,
+        "job_specs": specs_list,
     }
 
 
@@ -621,6 +910,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout-seconds", type=float, default=45)
     parser.add_argument("--headful", action="store_true")
     parser.add_argument("--proxy", help="HTTP or SOCKS5 proxy URL")
+    parser.add_argument(
+        "--show-logs",
+        action="store_true",
+        help="Print live scraper progress to stderr",
+    )
     parser.add_argument(
         "--gemini-model",
         help=f"Gemini model (default: GEMINI_MODEL or {DEFAULT_GEMINI_MODEL})",
@@ -649,8 +943,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 headless=not args.headful,
                 proxy=args.proxy,
                 include_all=args.all,
-                gemini_model=args.gemini_model,
                 max_html_chars=args.max_html_chars,
+                show_logs=args.show_logs,
             )
         )
     except (RuntimeError, ValueError) as exc:
