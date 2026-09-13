@@ -20,6 +20,7 @@ Two output shapes travel through the pipeline:
 from __future__ import annotations
 
 import sys as _sys, pathlib as _pathlib
+
 _sys.path.insert(0, str(_pathlib.Path(__file__).resolve().parents[1]))  # backend/
 
 from dataclasses import dataclass, field
@@ -36,7 +37,6 @@ from common.models import DEFAULT_GEMINI_MODEL, EMBEDDING_MODEL, EMBEDDING_DIMEN
 DETAILS_SUMMARY_KEY = "Summary"
 DETAILS_LIST_KEYS: tuple[str, ...] = (
     "Architectural_Components",
-    "Core_Competencies",
     "Technologies",
     "Actions",
     "Metrics",
@@ -96,9 +96,6 @@ DETAILS_SCHEMA: dict[str, Any] = {
         "Architectural_Components": _string_array(
             "Distinct functional systems and subsystems built."
         ),
-        "Core_Competencies": _string_array(
-            "Applied methodologies, e.g. 'Process Isolation', 'Stream Processing'."
-        ),
         "Technologies": _string_array(
             "Specific tools, cloud resources and environments used."
         ),
@@ -134,7 +131,6 @@ FRAGMENT_SCHEMA: dict[str, Any] = {
         "Architectural_Components": _string_array(
             "Functional components implemented in this slice."
         ),
-        "Core_Competencies": _string_array("Methodologies applied in this slice."),
         "Technologies": _string_array("Specific tools and environments in this slice."),
         "Actions": _string_array("Implementation steps evidenced by this slice."),
         "Metrics": _string_array("Quantifiable figures found in this slice."),

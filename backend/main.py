@@ -1,12 +1,16 @@
-"""HTTP API for the repository analyzer and Simplify job scraper.
+"""Umbrella FastAPI app for the upjob backend.
 
 Run from this directory with::
 
     uvicorn main:app --reload
 
-The two underlying projects are kept in their existing directories.  The path
-setup below lets this module run directly from a source checkout without first
-installing either project as a package.
+Each backend component keeps its own project directory and exposes either a
+FastAPI router or async entry points.  This app mounts those routers and, for
+repo-analyzer and simplify-scraper, defines the HTTP endpoints directly.  The
+path setup below lets this module run directly from a source checkout without
+first installing any component as a package.  To add a new component: append its
+source directory to the ``sys.path`` bootstrap below, import its
+``create_*_router`` factory, and ``app.include_router`` it.
 """
 
 from __future__ import annotations
@@ -15,6 +19,7 @@ import asyncio
 import json
 import os
 import sys
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Literal
@@ -30,13 +35,33 @@ from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 BASE_DIR = Path(__file__).resolve().parent
 REPO_ANALYZER_DIR = BASE_DIR / "repo-analyzer"
 SIMPLIFY_SCRAPER_DIR = BASE_DIR / "simplify-scraper"
+REWARD_HANDLER_DIR = BASE_DIR / "reward-handler"
+GMAIL_AGENT_DIR = BASE_DIR / "gmail-agent"
 
-# These projects intentionally remain independently runnable.  Add their source
-# roots when this API is launched from the repository root.
-for source_root in (REPO_ANALYZER_DIR / "src", SIMPLIFY_SCRAPER_DIR):
+# Components run from their own directories, so they are not importable by
+# default.  Add each component source root, plus BASE_DIR for the shared
+# ``common`` package that the components import.
+for source_root in (
+    REPO_ANALYZER_DIR / "src",
+    SIMPLIFY_SCRAPER_DIR,
+    REWARD_HANDLER_DIR,
+    GMAIL_AGENT_DIR,
+    BASE_DIR,
+):
     source_path = str(source_root)
     if source_path not in sys.path:
         sys.path.insert(0, source_path)
+
+# Load local development configuration without overriding deployment-provided
+# environment variables.
+for dotenv_path in (
+    BASE_DIR / ".env",
+    REPO_ANALYZER_DIR / ".env",
+    SIMPLIFY_SCRAPER_DIR / ".env",
+    REWARD_HANDLER_DIR / ".env",
+    GMAIL_AGENT_DIR / ".env",
+):
+    load_dotenv(dotenv_path=dotenv_path, override=False)
 
 from repo_analyzer import RepositoryAnalyzer
 from repo_analyzer.analyzer import RepositoryAnalysisError
@@ -52,17 +77,27 @@ from simplify_scraper import (
     DEFAULT_SOURCE_URL,
     scrape_new_jobs,
 )
+from reward_handler import create_fastapi_router
+from gmail_agent import create_fastapi_router as create_gmail_router
+from gmail_scheduler import start_gmail_scheduler
 
 DEFAULT_REPOSITORY = "PyroSh0ck/miniProjects-langGraph"
 
-# Load local development configuration without replacing deployment-provided
-# environment variables.
-for dotenv_path in (
-    BASE_DIR / ".env",
-    REPO_ANALYZER_DIR / ".env",
-    SIMPLIFY_SCRAPER_DIR / ".env",
-):
-    load_dotenv(dotenv_path=dotenv_path, override=False)
+# reward-handler reads DATABASE_URL / REDIS_URL; the rest of the backend uses
+# POSTGRES_URL.  Prefer the reward-handler names and fall back to POSTGRES_URL so
+# every component targets one database.  ``None`` lets each entry point resolve
+# its own environment variable (and, for Redis, fall back to the in-memory
+# leaderboard when REDIS_URL is unset).
+DATABASE_DSN = (
+    os.getenv("DATABASE_URL", "").strip()
+    or os.getenv("POSTGRES_URL", "").strip()
+    or None
+)
+REDIS_URL = os.getenv("REDIS_URL", "").strip() or None
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip() or None
+# The gmail-agent's 2-hour poll runs in-process unless disabled (e.g. to avoid a
+# live Gmail/Gemini poll in CI or local smoke tests).
+GMAIL_SCHEDULER_ENABLED = os.getenv("GMAIL_SCHEDULER_ENABLED", "1").strip() not in ("0", "false", "")
 
 
 class APIModel(BaseModel):
@@ -174,17 +209,40 @@ class ScrapeJobsResponse(APIModel):
 
 class HealthResponse(APIModel):
     status: Literal["ok"] = "ok"
-    services: tuple[str, str] = ("repo-analyzer", "simplify-scraper")
+    services: tuple[str, ...] = (
+        "repo-analyzer",
+        "simplify-scraper",
+        "reward-handler",
+        "gmail-agent",
+    )
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    scheduler = None
+    if GMAIL_SCHEDULER_ENABLED:
+        scheduler = start_gmail_scheduler(dsn=DATABASE_DSN, gemini_api_key=GEMINI_API_KEY)
+    try:
+        yield
+    finally:
+        if scheduler is not None:
+            scheduler.shutdown(wait=False)
 
 
 app = FastAPI(
     title="Upjob Backend API",
     version="1.0.0",
-    description="HTTP interface for repo-analyzer and simplify-scraper.",
+    description="Umbrella HTTP interface for the upjob backend components.",
+    lifespan=lifespan,
 )
 
 from resume_service import router as resume_router
 app.include_router(resume_router)
+
+# reward-handler: economy, verification, leaderboard, and cron routes under /api.
+app.include_router(create_fastapi_router(dsn=DATABASE_DSN, redis_url=REDIS_URL))
+# gmail-agent: recent-email sync + auth status under /api/gmail.
+app.include_router(create_gmail_router(dsn=DATABASE_DSN, gemini_api_key=GEMINI_API_KEY))
 
 _scraper_lock = asyncio.Lock()
 _scraper_state_file = BASE_DIR / ".simplify_scraper_state.json"

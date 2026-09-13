@@ -8,7 +8,8 @@ Components:
 - `simplify-scraper/` — SimplifyJobs internship scraper (pre-existing).
 - `repo-analyzer/` — Feature #1: GitHub repo ingestion & skill profiling. Implements `RepoAnalyzer.md`.
 - `resume-tailor/` — Feature #2: semantic resume tailor. Implements `ResumeTailor.md`. Consumes repo-analyzer's data.
-- `common/` — shared helpers (db, gemini, embeddings, latex, models) imported by both features.
+- `reward-handler/` — Feature #3: progression, economy & verification engine with subagent token optimization. Implements `RewardHandler.md`.
+- `common/` — shared helpers (db, gemini, embeddings, latex, models) imported by all features.
 
 ---
 
@@ -43,13 +44,29 @@ Evidence: a "Backend Engineer – API Platform" job against `demo-user`'s 4 seed
 
 ---
 
+## Feature #3 — reward-handler
+
+### Done and verified (offline unit tests, schema, in-memory fallback, subagents)
+
+- **Schema & Migrations** — `user_economy`, `verification_logs` (anti-cheat idempotency), `quest_completions`, `user_inventory` (badges, cosmetics, feature flags, verified architectures), and `weekly_leaderboard_snapshots`.
+- **Verification Ingestion** — daily job applications check duplicate `confirmation_hash` (409 Conflict); awards 100 XP, 50 base bytes on first app of day, and tier bonus bytes multiplied by streak multiplier upon reaching daily target. Architectural quests award base 500 XP, 100 Cores, 200 Bytes, and +50 Cores high-quality bonus (score >= 90).
+- **Streak State Machine** — daily midnight UTC rollover with milestone triggers (Day 7 bronze badge + 50 Cores, Day 30 gold badge + 250 Cores), active streak freeze consumption when target is missed, streak reset to 0 with zero freezes, and automatic lazy evaluation catch-up on user requests.
+- **Shop Redemptions** — atomic debit using `SELECT ... FOR UPDATE` row-level locks on `user_economy` with inventory allocation for consumables, cosmetics, and functional platform flags (`unlocked_features`).
+- **Redis Leaderboards** — pipelined atomic `ZINCRBY` updates across `leaderboard:all_time` and `leaderboard:weekly`, weekly reset snapshotting top 10 to Postgres, and an `InMemoryRedisLeaderboard` fallback for local dev when `REDIS_URL` is omitted.
+- **Subagent Token Optimization** — 3-tier in-process funnel: Tier 0 commit-SHA cache + file filter (0 tokens) → Tier 1 Scout Subagent (`gemini-3.5-flash-lite`, ~800 tokens) → AST structural extractor (0 tokens) → Tier 2 Evaluator Subagent (`gemini-3.5-flash-lite`, ~1,500 tokens). Slashes evaluation cost from ~120,000 tokens to ~2,500 tokens (>97% reduction).
+- **Tests** — 57 offline stdlib `unittest` tests.
+
+Evidence: All 57 tests passing in <0.1s covering idempotency conflicts, streak multipliers, milestone payouts, freeze preservation, atomic shop transactions, Redis pipeline operations, and Scout/Evaluator subagents.
+
+---
+
 ## What needs to be worked on
 
-### Integration (the real next step, shared by both features)
+### Integration (the real next step, shared across all components)
 
-- [ ] **FastAPI layer.** `analyze_repository` and `tailor_resume` are both built to be called from HTTP routes and return JSON-serializable data, but nothing mounts them. Decide sync-vs-background: analysis takes tens of seconds and tailoring makes 6–8 model calls, both too long for a blocking request.
-- [ ] **Real `user_id` source.** The column and plumbing exist, but `user_id` is just a passed-in string; it needs to come from the WorkOS auth context once the HTTP layer exists.
-- [ ] **Frontend wiring.** Neither feature is connected to `../frontend` (Next.js/WorkOS).
+- [ ] **FastAPI umbrella layer.** `analyze_repository`, `tailor_resume`, and `reward_handler`'s `create_fastapi_router` are all built to be called from HTTP routes and return JSON-serializable data, but nothing mounts them into an umbrella service yet.
+- [ ] **Real `user_id` source.** The column and plumbing exist, but `user_id` is currently passed in; it needs to come from the WorkOS auth context once the HTTP layer exists.
+- [ ] **Frontend wiring.** Components are not yet wired to `../frontend` (Next.js/WorkOS).
 
 ### Hardening / correctness
 
@@ -57,11 +74,11 @@ Evidence: a "Backend Engineer – API Platform" job against `demo-user`'s 4 seed
 - [ ] **No retry/caching on the tarball fetch** — only Gemini calls retry. See `repo-analyzer/ingestion.py::_fetch_repository_files_blocking`.
 - [ ] **Private repos** work if the PAT has scope, but that path is untested.
 - [ ] **Fabricated metrics in resume bullets.** The reviewer prompt (`ResumeTailor.md` §4) mandates a metric on every bullet, so the model invents plausible numbers. Inherent to the spec; consider grounding bullets in a `user_context`-style input of real figures. See `resume-tailor/generation.py`.
-- [ ] **Free-tier Gemini quota** (250k input tokens/min for `gemini-3.5-flash-lite`) throttles large repos and multi-project tailoring; large repos (e.g. flask) hit 429. The per-call backoff is shorter than the quota's retry window.
+- [ ] **Free-tier Gemini quota** (250k input tokens/min for `gemini-3.5-flash-lite`) throttles large repos and multi-project tailoring; large repos (e.g. flask) hit 429. (Addressed in Feature #3 via tiered subagents).
 
 ### Housekeeping
 
 - [ ] **Rotate the three credentials** (GitHub PAT, Gemini key, TigerCloud password) — pasted in plaintext in chat on 2026-09-12.
 - [x] `user_id` on `projects` (migration 002).
 - [x] Similarity-search read path — resume-tailor consumes the stored embeddings.
-- [x] Specs tracked (`RepoAnalyzer.md`, `ResumeTailor.md`); components documented in `CLAUDE.md` and per-component `DOCUMENTATION.md`.
+- [x] Specs tracked (`RepoAnalyzer.md`, `ResumeTailor.md`, `RewardHandler.md`); components documented in `CLAUDE.md` and per-component `DOCUMENTATION.md`.

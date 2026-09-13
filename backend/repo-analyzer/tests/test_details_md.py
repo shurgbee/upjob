@@ -19,14 +19,12 @@ class TestRenderDetailsMd(unittest.TestCase):
         details = {
             DETAILS_SUMMARY_KEY: "Test",
             "Architectural_Components": [],
-            "Core_Competencies": [],
             "Technologies": [],
             "Actions": [],
             "Metrics": [],
         }
         result = render_details_md(details)
         self.assertIn("## Architectural Components", result)
-        self.assertIn("## Core Competencies", result)
         self.assertIn("## Technologies", result)
         self.assertIn("## Actions", result)
         self.assertIn("## Metrics", result)
