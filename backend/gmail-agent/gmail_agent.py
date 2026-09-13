@@ -154,19 +154,36 @@ async def authorize() -> dict:
 # FastAPI router
 # ---------------------------------------------------------------------------
 
+try:  # Router-only dependency; keep it optional so the CLI and tests run without it.
+    from pydantic import BaseModel as _BaseModel
+
+    class SyncBody(_BaseModel):
+        """Request body for ``POST /api/gmail/sync``.
+
+        Defined at module scope (not inside ``create_fastapi_router``) on
+        purpose: this module uses ``from __future__ import annotations``, so
+        FastAPI resolves the route's ``body: SyncBody`` hint via
+        ``get_type_hints`` against the module globals. A function-local model is
+        invisible there, so FastAPI falls back to treating ``body`` as a query
+        parameter and returns 422 ("Field required") for *every* request.
+        """
+
+        hours: int = 2
+        user_id: str | None = None
+except ImportError:  # pragma: no cover - only in minimal environments without pydantic
+    SyncBody = None  # type: ignore[assignment,misc]
+
+
 def create_fastapi_router(dsn: str | None = None, gemini_api_key: str | None = None) -> Any:
     """APIRouter exposing the sync + auth-status routes under ``/api``."""
     try:
         from fastapi import APIRouter, HTTPException
-        from pydantic import BaseModel
     except ImportError as exc:
         raise RuntimeError("FastAPI and Pydantic must be installed to create router.") from exc
+    if SyncBody is None:
+        raise RuntimeError("FastAPI and Pydantic must be installed to create router.")
 
     router = APIRouter(prefix="/api", tags=["gmail"])
-
-    class SyncBody(BaseModel):
-        hours: int = 2
-        user_id: str | None = None
 
     @router.post("/gmail/sync")
     async def sync(body: SyncBody):
