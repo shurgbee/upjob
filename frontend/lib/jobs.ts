@@ -17,6 +17,7 @@ type JobSpecRow = {
   id: number;
   title: string;
   url: string;
+  company: string;
   technologies: string[];
   architecture: string[];
   yoe: number;
@@ -83,6 +84,7 @@ export async function getJobSpecs(): Promise<Job[]> {
       id,
       title,
       url,
+      company,
       technologies,
       architecture,
       yoe,
@@ -93,7 +95,7 @@ export async function getJobSpecs(): Promise<Job[]> {
 
   return rows.map((row) => ({
     id: row.id,
-    source: sourceFromUrl(row.url),
+    source: row.company.trim() || sourceFromUrl(row.url),
     title: row.title,
     url: row.url,
     technologies: row.technologies,

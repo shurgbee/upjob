@@ -1,0 +1,55 @@
+% UpJob starter using Jake's Resume command conventions.
+% Replace all bracketed placeholders with your own information.
+\documentclass[letterpaper,11pt]{article}
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{tabularx}
+\usepackage[english]{babel}
+\input{glyphtounicode}
+\pdfgentounicode=1
+\addtolength{\oddsidemargin}{-0.5in}
+\addtolength{\evensidemargin}{-0.5in}
+\addtolength{\textwidth}{1in}
+\addtolength{\topmargin}{-.5in}
+\addtolength{\textheight}{1.0in}
+\pagestyle{empty}
+\raggedright
+\raggedbottom
+\titleformat{\section}{\vspace{-4pt}\scshape\raggedright\large}{}{0em}{}[\titlerule]
+\newcommand{\resumeItem}[1]{\item\small{#1\vspace{-2pt}}}
+\newcommand{\resumeSubItem}[1]{\resumeItem{#1}}
+\newcommand{\resumeSubheading}[4]{\item\begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}\textbf{#1} & #2 \\ \textit{\small #3} & \textit{\small #4} \\\end{tabular*}}
+\newcommand{\resumeProjectHeading}[2]{\item\begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}\small #1 & #2 \\\end{tabular*}}
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.15in,label={}]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-5pt}}
+\begin{document}
+\begin{center}
+  \textbf{\Huge [Your Name]} \\
+  \small [Your Email] $|$ [Your Phone] $|$ [Your GitHub / LinkedIn]
+\end{center}
+\section{Education}
+\resumeSubHeadingListStart
+  \resumeSubheading{[University]}{[Location]}{[Degree]}{[Dates]}
+\resumeSubHeadingListEnd
+\section{Experience}
+\resumeSubHeadingListStart
+  \resumeSubheading{[Role]}{[Dates]}{[Organization]}{[Location]}
+  \resumeItemListStart
+    \resumeItem{[Describe your contribution, the tools used, and an outcome you can substantiate.]}
+  \resumeItemListEnd
+\resumeSubHeadingListEnd
+\section{Projects}
+\resumeSubHeadingListStart
+  \resumeProjectHeading{\textbf{[Project Name]} $|$ \emph{[Technologies]}}{[Dates]}
+  \resumeItemListStart
+    \resumeItem{[Describe what you built and why. Scan a repository in UpJob to generate suggestions.]}
+  \resumeItemListEnd
+\resumeSubHeadingListEnd
+\section{Technical Skills}
+\textbf{Languages:} [Your languages] \\
+\textbf{Frameworks and Tools:} [Your tools]
+\end{document}

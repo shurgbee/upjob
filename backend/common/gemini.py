@@ -40,6 +40,7 @@ async def generate_json(
     prompt: str,
     schema: dict[str, Any],
     system_instruction: str,
+    use_response_schema: bool = False,
     max_output_tokens: int = 8192,
     max_attempts: int = MAX_ATTEMPTS,
 ) -> dict[str, Any]:
@@ -54,8 +55,12 @@ async def generate_json(
         ai_client: A genai.Client.aio instance
         model: Model name
         prompt: Prompt text
-        schema: JSON schema for response_json_schema
+        schema: Structured-output schema
         system_instruction: System instruction text
+        use_response_schema: Send the schema through the SDK's compatibility
+            ``response_schema`` field instead of ``response_json_schema``.
+            Some Gemini models reject full JSON Schema keywords such as
+            ``additionalProperties``.
         max_output_tokens: Token limit (default 8192)
         max_attempts: Maximum retry attempts (default MAX_ATTEMPTS)
 
@@ -66,10 +71,11 @@ async def generate_json(
         Exception: Non-retryable errors from the API
         RuntimeError: Empty response or malformed JSON
     """
+    schema_field = "response_schema" if use_response_schema else "response_json_schema"
     config = {
         "system_instruction": system_instruction,
         "response_mime_type": "application/json",
-        "response_json_schema": schema,
+        schema_field: schema,
         "temperature": 0,
         "max_output_tokens": max_output_tokens,
     }

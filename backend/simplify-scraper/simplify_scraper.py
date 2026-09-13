@@ -302,6 +302,33 @@ def _string_list(value: Any) -> list[str]:
     return list(dict.fromkeys(cleaned))
 
 
+_JOB_PORTAL_COMPANY_NAMES = {
+    "ashby",
+    "greenhouse",
+    "greenhouse software",
+    "icims",
+    "jobvite",
+    "lever",
+    "oracle",
+    "oracle cloud",
+    "smartrecruiters",
+    "successfactors",
+    "taleo",
+    "workday",
+}
+
+
+def _company_from_extraction(posting: FeedPosting, extracted: dict[str, Any]) -> str:
+    """Use the feed employer when extraction mistakes an ATS for the company."""
+    extracted_company = _string_or_none(extracted.get("company"))
+    if (
+        extracted_company
+        and extracted_company.casefold() not in _JOB_PORTAL_COMPANY_NAMES
+    ):
+        return extracted_company
+    return posting.company
+
+
 def _job_result(
     posting: FeedPosting,
     extracted: dict[str, Any],
@@ -310,7 +337,7 @@ def _job_result(
     """Build exactly the per-posting shape described by sample.json."""
     return {
         "id": str(uuid.uuid4()),
-        "company": _string_or_none(extracted.get("company")) or posting.company,
+        "company": _company_from_extraction(posting, extracted),
         "role": _string_or_none(extracted.get("role")) or posting.role,
         "category": posting.category,
         "application_url": posting.application_url,
@@ -405,6 +432,10 @@ Extraction rules:
 - Use ISO 8601 for date_posted and valid_through when a date is present; otherwise null.
 - Keep description as clean plain text that describes the role.
 - Put each distinct qualification in requirements.
+- Return the employer, never the applicant-tracking system or job board. In
+  particular, names such as Greenhouse, Workday, Oracle Cloud, Taleo, Lever,
+  Ashby, and iCIMS are hosting platforms, not employers. Use the feed hint if
+  the page identifies only one of those platforms.
 - Skills should contain concise, explicitly requested technologies or competencies.
 - Return empty strings, empty arrays, or nulls when the page does not provide a field.
 
@@ -832,7 +863,10 @@ async def scrape_new_jobs(
     )
 
     specs_list = list(job_specs)
-    valid_specs = [s for s in specs_list if "error" not in s and s.get("architecture")]
+    # A listing without inferred architecture is still a valid listing. The
+    # store writes it with a null embedding, so it remains visible in the jobs
+    # dashboard while naturally being excluded from architecture similarity.
+    valid_specs = [s for s in specs_list if "error" not in s]
     if valid_specs:
         try:
             from job_store import connect, init_db, upsert_job_specs
