@@ -17,6 +17,25 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
   timeZone: "UTC",
 });
 
+// FastAPI errors arrive as either a string `detail` (HTTPException) or, on a 422,
+// an array of `{ type, loc, msg, input }` objects. Flatten both to a plain string
+// so they can be rendered as text instead of crashing React with a raw object.
+function formatErrorDetail(data: unknown, fallback: string): string {
+  if (data && typeof data === "object") {
+    const detail = (data as { detail?: unknown; error?: unknown }).detail;
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail)) {
+      const messages = detail
+        .map((item) => (item && typeof item === "object" && "msg" in item ? String((item as { msg: unknown }).msg) : null))
+        .filter((msg): msg is string => Boolean(msg));
+      if (messages.length > 0) return messages.join("; ");
+    }
+    const error = (data as { error?: unknown }).error;
+    if (typeof error === "string") return error;
+  }
+  return fallback;
+}
+
 function SortIndicator({ active, direction }: { active: boolean; direction: SortDirection }) {
   return <span className={`sort-indicator${active ? " is-active" : ""}`} aria-hidden="true">{active && direction === "desc" ? "↓" : "↑"}</span>;
 }
@@ -58,7 +77,7 @@ export function Dashboard({ jobs: readyJobs }: { jobs: Job[] }) {
       const data = await response.json();
       if (!response.ok) {
         setSyncError(true);
-        setSyncMessage(data?.detail ?? data?.error ?? "Sync failed. Please try again.");
+        setSyncMessage(formatErrorDetail(data, "Sync failed. Please try again."));
         return;
       }
       const qualified = data.qualified ?? 0;

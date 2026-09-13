@@ -46,6 +46,14 @@ function getSql() {
   return globalForPostgres.upjobSql;
 }
 
+function asText(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+function asStringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
 function titleCase(value: string) {
   return value
     .replace(/[-_]+/g, " ")
@@ -93,14 +101,17 @@ export async function getJobSpecs(): Promise<Job[]> {
     ORDER BY COALESCE(publish_date, spec_created_at) DESC, id DESC
   `;
 
-  return rows.map((row) => ({
-    id: row.id,
-    source: row.company.trim() || sourceFromUrl(row.url),
-    title: row.title,
-    url: row.url,
-    technologies: row.technologies,
-    architecture: row.architecture,
-    yearsOfExperience: row.yoe,
-    opened: row.opened_at.toISOString(),
-  }));
+  return rows.map((row) => {
+    const url = asText(row.url);
+    return {
+      id: row.id,
+      source: asText(row.company).trim() || sourceFromUrl(url),
+      title: asText(row.title, "Untitled role"),
+      url,
+      technologies: asStringList(row.technologies),
+      architecture: asStringList(row.architecture),
+      yearsOfExperience: typeof row.yoe === "number" ? row.yoe : 0,
+      opened: row.opened_at instanceof Date ? row.opened_at.toISOString() : new Date().toISOString(),
+    };
+  });
 }
