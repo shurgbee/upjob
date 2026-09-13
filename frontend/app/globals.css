@@ -253,10 +253,12 @@ a { color: inherit; text-decoration: none; }
 .job-tabs button[aria-selected="true"] span { background: rgba(255,255,255,.17); }
 .jobs-table-wrap { overflow-x: auto; border-top: 1px solid var(--line); }
 .jobs-table { width: 100%; border-collapse: collapse; table-layout: fixed; color: #35354a; font-size: 0.88rem; }
-.jobs-table .company-column { width: 29%; }
-.jobs-table .role-column { width: 34%; }
-.jobs-table .date-column { width: 20%; }
-.jobs-table .action-column { width: 17%; }
+.jobs-table .company-column { width: 26%; }
+.jobs-table .role-column { width: 30%; }
+.jobs-table .match-column { width: 12%; }
+.jobs-table .date-column { width: 17%; }
+.jobs-table .action-column { width: 15%; }
+.skill-match-badge { display: inline-block; padding: 3px 10px; color: var(--blue); background: var(--blue-soft); border-radius: 999px; font-size: 0.78rem; font-weight: 700; }
 .jobs-table th, .jobs-table td { height: 72px; padding: 0 18px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
 .jobs-table th:first-child, .jobs-table td:first-child { padding-left: 30px; }
 .jobs-table th:last-child, .jobs-table td:last-child { padding-right: 30px; }
