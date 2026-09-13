@@ -10,7 +10,9 @@ ALTER TABLE job_specs
 
 DO $$ BEGIN
     ALTER TABLE job_specs ADD CONSTRAINT job_specs_spec_id_key UNIQUE (spec_id);
-EXCEPTION WHEN duplicate_object THEN NULL;
+-- UNIQUE builds an index, so a re-run raises duplicate_table (42P07), not just
+-- duplicate_object (42710); catch both so ensure_schema is idempotent.
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
 END $$;
 
 ALTER TABLE job_applications
@@ -20,7 +22,7 @@ DO $$ BEGIN
     ALTER TABLE job_applications
         ADD CONSTRAINT job_applications_job_spec_id_fkey
         FOREIGN KEY (job_spec_id) REFERENCES job_specs(spec_id);
-EXCEPTION WHEN duplicate_object THEN NULL;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
 END $$;
 
 CREATE INDEX IF NOT EXISTS idx_job_applications_user_spec
