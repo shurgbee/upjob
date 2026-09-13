@@ -15,6 +15,7 @@ import asyncio
 import json
 import os
 import sys
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Literal
@@ -30,10 +31,17 @@ from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 BASE_DIR = Path(__file__).resolve().parent
 REPO_ANALYZER_DIR = BASE_DIR / "repo-analyzer"
 SIMPLIFY_SCRAPER_DIR = BASE_DIR / "simplify-scraper"
+RESUME_TAILOR_DIR = BASE_DIR / "resume-tailor"
 
 # These projects intentionally remain independently runnable.  Add their source
-# roots when this API is launched from the repository root.
-for source_root in (REPO_ANALYZER_DIR / "src", SIMPLIFY_SCRAPER_DIR):
+# roots when this API is launched from the repository root.  BASE_DIR is added so
+# the shared ``common`` package (imported by resume-tailor) resolves as well.
+for source_root in (
+    REPO_ANALYZER_DIR / "src",
+    SIMPLIFY_SCRAPER_DIR,
+    RESUME_TAILOR_DIR,
+    BASE_DIR,
+):
     source_path = str(source_root)
     if source_path not in sys.path:
         sys.path.insert(0, source_path)
@@ -52,6 +60,10 @@ from simplify_scraper import (
     DEFAULT_SOURCE_URL,
     scrape_new_jobs,
 )
+from schemas import build_job_specification
+from retrieval import select_projects
+from resume_tailor import tailor_resume
+from common.db import connect as connect_asyncpg
 
 DEFAULT_REPOSITORY = "PyroSh0ck/miniProjects-langGraph"
 
@@ -61,6 +73,7 @@ for dotenv_path in (
     BASE_DIR / ".env",
     REPO_ANALYZER_DIR / ".env",
     SIMPLIFY_SCRAPER_DIR / ".env",
+    RESUME_TAILOR_DIR / ".env",
 ):
     load_dotenv(dotenv_path=dotenv_path, override=False)
 
@@ -172,9 +185,63 @@ class ScrapeJobsResponse(APIModel):
     job_specs: list[JobSpec]
 
 
+class TailorResumeRequest(APIModel):
+    job_id: int = Field(
+        ge=1,
+        examples=[1],
+        description="Identity (job_specs.id) of the target posting to tailor against.",
+    )
+    user_id: UUID = Field(
+        description="User UUID; scopes which of the user's analyzed projects are retrieved.",
+    )
+    candidate_name: str = Field(
+        default="Candidate",
+        min_length=1,
+        description="Name rendered in the resume header.",
+    )
+    top_k: Annotated[int, Field(ge=1, le=10)] = 4
+    threshold: Annotated[float, Field(ge=0, le=1)] = 0.8
+
+
+class MatchProjectsRequest(APIModel):
+    job_id: int = Field(
+        ge=1,
+        examples=[1],
+        description="Identity (job_specs.id) of the target posting to match projects against.",
+    )
+    user_id: UUID = Field(
+        description="User UUID; scopes which of the user's analyzed projects are ranked.",
+    )
+    top_k: Annotated[int, Field(ge=1, le=10)] = 4
+    threshold: Annotated[float, Field(ge=0, le=1)] = 0.8
+
+
+class TailorResumeResponse(APIModel):
+    status: Literal["ok", "empty", "error"]
+    error: str | None = None
+    job_id: int
+    job_title: str
+    candidate_name: str
+    user_id: str | None = None
+    selected_projects: list[dict]
+    tex_chars: int
+    latex: str = Field(description="The generated LaTeX resume source.")
+
+
+class MatchProjectsResponse(APIModel):
+    job_id: int
+    job_title: str
+    count: int
+    projects: list[dict]
+
+
 class HealthResponse(APIModel):
     status: Literal["ok"] = "ok"
-    services: tuple[str, str] = ("repo-analyzer", "simplify-scraper")
+    services: tuple[str, str, str] = (
+        "repo-analyzer",
+        "simplify-scraper",
+        "resume-tailor",
+    )
 
 
 app = FastAPI(
@@ -400,3 +467,174 @@ async def scrape_simplify_jobs(request: ScrapeJobsRequest) -> dict:
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=f"Scraper failed: {exc}",
             ) from exc
+
+
+def _resume_tailor_dsn() -> str:
+    """Resolve the PostgreSQL DSN shared with repo-analyzer/resume-tailor."""
+
+    dsn = os.getenv("DATABASE_URL", "").strip() or os.getenv("POSTGRES_URL", "").strip()
+    if not dsn:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="DATABASE_URL is not configured.",
+        )
+    return dsn
+
+
+def _gemini_api_key() -> str:
+    key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="GEMINI_API_KEY is not configured.",
+        )
+    return key
+
+
+_JOB_SPEC_SQL = """
+    SELECT title, url, company, category, employment_type, description,
+           requirements, technologies, architecture, yoe, publish_date
+    FROM public.job_specs
+    WHERE id = $1
+"""
+
+
+async def _fetch_job_spec(conn, job_id: int) -> dict | None:
+    """Load one job_specs row and shape it into a JobSpecification payload."""
+
+    row = await conn.fetchrow(_JOB_SPEC_SQL, job_id)
+    if row is None:
+        return None
+    publish_date = row["publish_date"]
+    # ``requirements`` is TEXT[] in the source schema but plain TEXT in some
+    # deployed databases; accept either shape.
+    requirements = row["requirements"]
+    if isinstance(requirements, str):
+        requirements = [requirements] if requirements else []
+    else:
+        requirements = list(requirements or [])
+    return {
+        "title": row["title"],
+        "url": row["url"] or "",
+        "company": row["company"],
+        "category": row["category"],
+        "employment_type": row["employment_type"],
+        "description": row["description"],
+        "requirements": requirements,
+        "technologies": list(row["technologies"] or []),
+        "architecture": list(row["architecture"] or []),
+        "yoe": row["yoe"],
+        "publish_date": publish_date.isoformat() if publish_date is not None else None,
+    }
+
+
+@app.post(
+    "/resume-tailor/tailor",
+    response_model=TailorResumeResponse,
+    tags=["resume-tailor"],
+)
+async def tailor_resume_endpoint(request: TailorResumeRequest) -> TailorResumeResponse:
+    """Build a tailored LaTeX resume for a stored job posting and user."""
+
+    dsn = _resume_tailor_dsn()
+    _gemini_api_key()  # Fail fast with 503 before doing any work.
+
+    conn = await connect_asyncpg(dsn)
+    try:
+        job_spec = await _fetch_job_spec(conn, request.job_id)
+    finally:
+        await conn.close()
+
+    if job_spec is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No job_specs row with id={request.job_id}.",
+        )
+
+    handle, tmp_path = tempfile.mkstemp(suffix=".tex")
+    os.close(handle)
+    try:
+        envelope = await tailor_resume(
+            job_spec,
+            str(request.user_id),
+            candidate_name=request.candidate_name,
+            output_path=tmp_path,
+            database_url=dsn,
+            top_k=request.top_k,
+            threshold=request.threshold,
+        )
+        try:
+            latex = Path(tmp_path).read_text(encoding="utf-8")
+        except OSError:
+            latex = ""
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+    # tailor_resume degrades rather than aborts, so a failed pipeline returns a
+    # 200 envelope with status "error"/"empty" (configuration gaps already 503'd).
+    return TailorResumeResponse(
+        status=envelope.get("status", "error"),
+        error=envelope.get("error"),
+        job_id=request.job_id,
+        job_title=envelope.get("job_title") or job_spec["title"],
+        candidate_name=envelope.get("candidate_name", request.candidate_name),
+        user_id=envelope.get("user_id"),
+        selected_projects=envelope.get("selected_projects", []),
+        tex_chars=envelope.get("tex_chars", len(latex)),
+        latex=latex,
+    )
+
+
+@app.post(
+    "/resume-tailor/match-projects",
+    response_model=MatchProjectsResponse,
+    tags=["resume-tailor"],
+)
+async def match_projects_endpoint(
+    request: MatchProjectsRequest,
+) -> MatchProjectsResponse:
+    """Rank a user's projects against a stored job posting without generating bullets."""
+
+    dsn = _resume_tailor_dsn()
+    api_key = _gemini_api_key()
+
+    conn = await connect_asyncpg(dsn)
+    try:
+        job_spec = await _fetch_job_spec(conn, request.job_id)
+        if job_spec is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No job_specs row with id={request.job_id}.",
+            )
+        job = build_job_specification(job_spec)
+        try:
+            projects = await select_projects(
+                conn,
+                job,
+                str(request.user_id),
+                api_key=api_key,
+                threshold=request.threshold,
+                top_k=request.top_k,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+        except APIError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Embedding failed: {exc}",
+            ) from exc
+    finally:
+        await conn.close()
+
+    return MatchProjectsResponse(
+        job_id=request.job_id,
+        job_title=job.title,
+        count=len(projects),
+        projects=[project.to_dict() for project in projects],
+    )

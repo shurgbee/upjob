@@ -50,7 +50,7 @@ SELECT
   p.technologies,
   p.architecture AS architectures,
   p.description AS details_markdown,
-  p.arch_embeddings::text AS embedding_text,
+  p.arch_embedding::text AS embedding_text,
   (
     SELECT count(DISTINCT lower(btrim(pt)))
     FROM unnest(p.technologies) AS pt
@@ -143,6 +143,10 @@ def rank_by_similarity(
 
     for row in rows:
         embedding_text = row.get("embedding_text", "")
+        # A project without a stored architecture embedding cannot be ranked by
+        # cosine similarity; skip it rather than crash in parse_vector.
+        if not embedding_text:
+            continue
         vector = parse_vector(embedding_text)
 
         similarity = cosine_similarity(vector, job_vector)
