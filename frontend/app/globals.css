@@ -226,6 +226,12 @@ a { color: inherit; text-decoration: none; }
 .jobs-panel { overflow: hidden; background: var(--surface); border: 1px solid var(--line); border-radius: 25px; box-shadow: var(--shadow); }
 .panel-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; padding: 30px 30px 22px; }
 .panel-heading h2 { margin: 0; font-size: 1.55rem; letter-spacing: -0.035em; }
+.panel-controls { display: flex; align-items: center; gap: 12px; }
+.sync-button { min-height: 40px; padding: 0 16px; color: #fff; background: var(--blue); border: 0; border-radius: 12px; font-size: 0.82rem; font-weight: 680; cursor: pointer; box-shadow: 0 6px 14px rgba(67, 84, 232, 0.18); }
+.sync-button:hover { background: var(--blue-dark); }
+.sync-button:disabled { cursor: wait; opacity: 0.65; }
+.sync-status { margin: 0 30px 18px; padding: 10px 14px; color: var(--blue-dark); background: var(--blue-soft); border-radius: 12px; font-size: 0.82rem; font-weight: 600; }
+.sync-status.is-error { color: #ac4433; background: var(--coral-soft); }
 .job-tabs { display: flex; gap: 5px; padding: 5px; background: var(--paper); border: 1px solid var(--line); border-radius: 14px; }
 .job-tabs button { min-height: 40px; padding: 0 14px; color: var(--muted); background: transparent; border: 0; border-radius: 10px; font-size: 0.82rem; font-weight: 680; cursor: pointer; }
 .job-tabs button span { display: inline-grid; place-items: center; min-width: 22px; height: 22px; margin-left: 5px; padding: 0 6px; background: rgba(104, 105, 125, 0.1); border-radius: 99px; font-size: 0.7rem; }

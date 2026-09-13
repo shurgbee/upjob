@@ -46,6 +46,9 @@ export function Dashboard() {
     applied: { key: "opened", direction: "desc" },
   });
   const { user } = useAuth({ ensureSignedIn: true });
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState(false);
   const jobs = tab === "ready" ? readyJobs : appliedJobs;
   const currentSort = sort[tab];
   const sortedJobs = useMemo(() => {
@@ -58,6 +61,36 @@ export function Dashboard() {
     });
   }, [currentSort, jobs]);
   const firstName = user?.firstName ?? user?.name?.split(" ")[0] ?? "there";
+
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncMessage(null);
+    setSyncError(false);
+    try {
+      const response = await fetch("/api/gmail/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hours: 2 }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setSyncError(true);
+        setSyncMessage(data?.detail ?? data?.error ?? "Sync failed. Please try again.");
+        return;
+      }
+      const qualified = data.qualified ?? 0;
+      const matched = data.matched ?? 0;
+      const created = data.created ?? 0;
+      setSyncMessage(
+        `Synced ${qualified} application email${qualified === 1 ? "" : "s"} from the last 2 hours — ${matched} matched, ${created} added.`,
+      );
+    } catch {
+      setSyncError(true);
+      setSyncMessage("Could not reach the sync service.");
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const updateSort = (key: SortKey) => {
     setSort((current) => ({
@@ -98,11 +131,19 @@ export function Dashboard() {
       <section className="jobs-panel" aria-labelledby="jobs-heading">
         <div className="panel-heading">
           <div><p className="eyebrow">Your pipeline</p><h2 id="jobs-heading">Job matches</h2></div>
-          <div className="job-tabs" role="tablist" aria-label="Job lists">
-            <button type="button" role="tab" aria-selected={tab === "ready"} onClick={() => setTab("ready")}>Jobs to apply <span>4</span></button>
-            <button type="button" role="tab" aria-selected={tab === "applied"} onClick={() => setTab("applied")}>Jobs applied <span>24</span></button>
+          <div className="panel-controls">
+            {tab === "applied" && (
+              <button type="button" className="sync-button" onClick={handleSync} disabled={syncing}>
+                {syncing ? "Syncing…" : "Sync from Gmail"}
+              </button>
+            )}
+            <div className="job-tabs" role="tablist" aria-label="Job lists">
+              <button type="button" role="tab" aria-selected={tab === "ready"} onClick={() => setTab("ready")}>Jobs to apply <span>4</span></button>
+              <button type="button" role="tab" aria-selected={tab === "applied"} onClick={() => setTab("applied")}>Jobs applied <span>24</span></button>
+            </div>
           </div>
         </div>
+        {syncMessage && <p className={`sync-status${syncError ? " is-error" : ""}`} role="status">{syncMessage}</p>}
         <div className="jobs-table-wrap">
           <table className="jobs-table">
             <caption className="sr-only">{tab === "ready" ? "Jobs to apply" : "Applied jobs"}</caption>

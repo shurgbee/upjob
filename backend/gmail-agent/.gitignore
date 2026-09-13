@@ -1,0 +1,7 @@
+.env
+.venv/
+__pycache__/
+# OAuth secrets and cached tokens — never commit
+.gmail_token.json
+.gmail_mcp_token.json
+.gmail_client_secret.json

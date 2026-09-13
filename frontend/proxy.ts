@@ -8,5 +8,5 @@ export default authkitProxy({
 });
 
 export const config = {
-  matcher: ["/", "/login", "/home/:path*", "/shop/:path*"],
+  matcher: ["/", "/login", "/home/:path*", "/shop/:path*", "/api/gmail/:path*"],
 };
