@@ -55,7 +55,22 @@ CREATE INDEX IF NOT EXISTS idx_job_specs_arch_embedding
 
 def _arch_text(architecture: list[str]) -> str:
     """Join architecture items into a single string for embedding."""
-    return ", ".join(architecture)
+    return ", ".join(str(item) for item in architecture)
+
+
+def _as_text(value: Any, fallback: str = "") -> str:
+    """Coerce a spec field to a plain string so it never hits a TEXT column as an object."""
+    return value if isinstance(value, str) else fallback
+
+
+def _string_or_none(value: Any) -> str | None:
+    """Coerce a nullable TEXT field: keep real strings, otherwise NULL."""
+    return value if isinstance(value, str) else None
+
+
+def _is_writable_spec(spec: dict[str, Any]) -> bool:
+    """A spec is safe to persist only if it carries no error marker and has a real URL."""
+    return "error" not in spec and bool(_as_text(spec.get("url")).strip())
 
 
 async def _embed(client: genai.Client, texts: list[str]) -> list[list[float]]:
@@ -109,6 +124,9 @@ async def upsert_job_specs(
 
     client = genai.Client(api_key=api_key)
 
+    # Last line of defence: never persist error-shaped or url-less specs.
+    job_specs = [s for s in job_specs if _is_writable_spec(s)]
+
     specs_with_arch = [s for s in job_specs if s.get("architecture")]
     arch_texts = [_arch_text(s["architecture"]) for s in specs_with_arch]
 
@@ -146,12 +164,12 @@ async def upsert_job_specs(
                 spec_updated_at = EXCLUDED.spec_updated_at,
                 arch_embedding = EXCLUDED.arch_embedding
             """,
-            spec.get("title", ""),
-            spec["url"],
-            spec.get("company", ""),
-            spec.get("category", ""),
-            spec.get("employment_type"),
-            spec.get("description", ""),
+            _as_text(spec.get("title")),
+            _as_text(spec["url"]),
+            _as_text(spec.get("company")),
+            _as_text(spec.get("category")),
+            _string_or_none(spec.get("employment_type")),
+            _as_text(spec.get("description")),
             json.dumps(spec.get("requirements", [])),
             [str(t) for t in spec.get("technologies", [])],
             [str(a) for a in spec.get("architecture", [])],

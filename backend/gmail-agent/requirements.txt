@@ -1,0 +1,11 @@
+google-genai>=1.0,<2
+asyncpg>=0.29,<0.31
+python-dotenv>=1.0,<2
+apscheduler>=3.10,<4
+fastapi>=0.110
+uvicorn>=0.27
+# Gmail MCP transport (GMAIL_TRANSPORT=mcp, default)
+mcp>=1.2
+# Gmail REST fallback transport (GMAIL_TRANSPORT=rest)
+google-api-python-client>=2.0
+google-auth-oauthlib>=1.0

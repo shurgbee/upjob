@@ -9,7 +9,8 @@ This `backend` directory contains several standalone components plus one shared 
 - `simplify-scraper/` — discovers and extracts new SimplifyJobs internship postings with CloakBrowser + Gemini.
 - `repo-analyzer/` — ingests a GitHub repository URL and profiles the skills it demonstrates, persisting a project specification, a `DETAILS.md` document, and a pgvector embedding. Implements the spec in `RepoAnalyzer.md`.
 - `resume-tailor/` — builds a tailored LaTeX resume by matching a user's analyzed projects (from repo-analyzer) against a job specification, then generating and reviewing bullet points. Implements the spec in `ResumeTailor.md`.
-- `common/` — shared helpers imported by repo-analyzer and resume-tailor: `db.py` (connection/DSN/vector/timestamp), `gemini.py` (`generate_json` + retry/backoff), `embeddings.py` (`gemini-embedding-001`, L2 normalization), `latex.py` (escaping), `models.py` (model identifiers).
+- `reward-handler/` — centralized progression, economy, and verification engine with streak state machine, Redis leaderboards, and tiered subagent token optimization. Implements the spec in `RewardHandler.md`.
+- `common/` — shared helpers imported by repo-analyzer, resume-tailor, and reward-handler: `db.py` (connection/DSN/vector/timestamp), `gemini.py` (`generate_json` + retry/backoff), `embeddings.py` (`gemini-embedding-001`, L2 normalization), `latex.py` (escaping), `models.py` (model identifiers).
 
 Backend-wide status and the TODO list live in `PROGRESS.md`. Each feature has a `DOCUMENTATION.md` (navigation + file map + symptom→file table) and a `README.md` (setup + usage).
 
@@ -147,6 +148,61 @@ The public entry point is `tailor_resume` in `resume_tailor.py` — async, retur
 3. **LaTeX injection** (`latex_resume.py` + `templates/resume_template.tex`): a pure serializer that escapes all text via `common.latex` and `str.replace`s the `{{CANDIDATE_NAME}}`/`{{PROJECTS}}` tokens. Output compiles with `pdflatex`.
 
 **Critical gotcha:** retrieval must embed with the embedding model, not the generation model — do not forward `tailor_resume`'s generation `model` into `select_projects` (it falls back to `EMBEDDING_MODEL`). Passing a generation model yields a 404 on `embedContent`. A resume bullet's mandated metric (spec §4) is often fabricated by the model — inherent to the spec.
+
+## reward-handler (run from `reward-handler/`)
+
+Setup:
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env   # fill in DATABASE_URL, optional REDIS_URL, optional GEMINI_API_KEY
+```
+
+Run CLI:
+```bash
+python reward_handler.py status <user_id>
+python reward_handler.py set-tier <user_id> 2
+python reward_handler.py redeem <user_id> streak_freeze
+python reward_handler.py leaderboard --type weekly --limit 10
+python reward_handler.py verify-app <user_id> <job_id> <hash> --type EMAIL
+python reward_handler.py verify-quest <user_id> <quest_id> "Distributed Container Engine" 95
+python reward_handler.py rollover
+python reward_handler.py weekly-reset
+```
+
+Run tests (offline — no DB, Redis, or model SDK required):
+```bash
+python -m unittest discover -s tests -t .
+# Single module:
+python -m unittest tests.test_economy
+python -m unittest tests.test_subagents
+```
+
+### Architecture
+
+The public async entry points live in `reward_handler.py` (`get_user_economy_status`, `set_user_daily_tier`, `redeem_item`, `fetch_leaderboard`, `verify_job_application`, `verify_architectural_quest`, `run_midnight_rollover`, `run_weekly_reset`) and wrap the CLI. Keep new options plumbed through both.
+
+1. **Verification Ingestion** (`verification.py`):
+   - Daily job applications check `verification_logs` for `confirmation_hash` to reject duplicates with `409 Conflict` (anti-cheat). Awards 100 XP, 50 base bytes on first app of the day, and tier bonus bytes multiplied by streak multiplier when reaching daily target.
+   - Quests award base 500 XP, 100 Cores, 200 Bytes, +50 Cores high-quality bonus (score >= 90), and append the component to verified architectures.
+
+2. **Streak State Machine & Rollover** (`economy.py`):
+   - Computes daily transitions at midnight UTC: if yesterday's apps >= target, increment streak and check milestones (Day 7 bronze badge + 50 Cores, Day 30 gold badge + 250 Cores).
+   - If target was missed, consumes an active `streak_freeze` to preserve streak; otherwise resets streak to 0.
+   - Evaluates lazily when user calls `/api/economy/me` to catch up if cron was delayed.
+
+3. **Shop Redemptions** (`economy.py`):
+   - Executes atomic debit using `SELECT ... FOR UPDATE` row-level locks on `user_economy`. Allocates freezes, cosmetics, or functional platform unlock flags (`unlocked_features`).
+
+4. **Redis Leaderboards & In-Memory Fallback** (`leaderboard.py`):
+   - Pipelined atomic `ZINCRBY` updates to `leaderboard:all_time` and `leaderboard:weekly` on every XP change.
+   - Monday 00:00:00 UTC weekly reset snapshots top 10 to PostgreSQL `weekly_leaderboard_snapshots` and clears `leaderboard:weekly`.
+   - `InMemoryRedisLeaderboard` provides pure-Python sorted sets for local dev without a live Redis server.
+
+5. **Token Optimization via Tiered Subagents** (`subagents.py`):
+   - 3-tier in-process funnel: Tier 0 deterministic cache (by commit SHA) and file filter (0 tokens) → Tier 1 Scout Subagent (`gemini-3.5-flash-lite`, ~800 tokens) pinpoints 1–2 relevant files → AST structural code extraction (0 tokens) → Tier 2 Evaluator Subagent (`gemini-3.5-flash-lite`, ~1,500 tokens) strictly scores code against rubric.
+   - Reduces tokens per evaluation from ~120,000 down to ~2,500 (>97% reduction).
 
 ## Conventions (all components)
 

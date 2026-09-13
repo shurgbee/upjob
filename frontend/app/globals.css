@@ -240,6 +240,12 @@ a { color: inherit; text-decoration: none; }
 .jobs-panel { overflow: hidden; background: var(--surface); border: 1px solid var(--line); border-radius: 25px; box-shadow: var(--shadow); }
 .panel-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; padding: 30px 30px 22px; }
 .panel-heading h2 { margin: 0; font-size: 1.55rem; letter-spacing: -0.035em; }
+.panel-controls { display: flex; align-items: center; gap: 12px; }
+.sync-button { min-height: 40px; padding: 0 16px; color: #fff; background: var(--blue); border: 0; border-radius: 12px; font-size: 0.82rem; font-weight: 680; cursor: pointer; box-shadow: 0 6px 14px rgba(67, 84, 232, 0.18); }
+.sync-button:hover { background: var(--blue-dark); }
+.sync-button:disabled { cursor: wait; opacity: 0.65; }
+.sync-status { margin: 0 30px 18px; padding: 10px 14px; color: var(--blue-dark); background: var(--blue-soft); border-radius: 12px; font-size: 0.82rem; font-weight: 600; }
+.sync-status.is-error { color: #ac4433; background: var(--coral-soft); }
 .job-tabs { display: flex; gap: 5px; padding: 5px; background: var(--paper); border: 1px solid var(--line); border-radius: 14px; }
 .job-tabs button { min-height: 40px; padding: 0 14px; color: var(--muted); background: transparent; border: 0; border-radius: 10px; font-size: 0.82rem; font-weight: 680; cursor: pointer; }
 .job-tabs button span { display: inline-grid; place-items: center; min-width: 22px; height: 22px; margin-left: 5px; padding: 0 6px; background: rgba(104, 105, 125, 0.1); border-radius: 99px; font-size: 0.7rem; }
@@ -270,9 +276,43 @@ a { color: inherit; text-decoration: none; }
 .jobs-table .jobs-empty { height: 120px; color: var(--muted); text-align: center; }
 .action-heading, .jobs-table th.action-heading, .row-action { text-align: center; }
 .action-heading .sort-button { justify-content: center; }
-.row-action a { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-width: 72px; height: 38px; color: white; background: var(--night); border-radius: 11px; font-size: 0.8rem; font-weight: 700; transition: transform 160ms ease, background 160ms ease; }
-.row-action a:hover { background: var(--blue); transform: translateY(-1px); }
+  .row-action a,
+  .row-action .apply-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-width: 72px;
+    height: 38px;
+    color: white;
+    background: var(--night);
+    border: 0;
+    border-radius: 11px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 160ms ease, background 160ms ease;
+  }
+
+  .row-action a:hover,
+  .row-action .apply-link:hover {
+    background: var(--blue);
+    transform: translateY(-1px);
+  }
+
+  .row-action .apply-link:disabled {
+    cursor: wait;
+    opacity: 0.65;
+    transform: none;
+  }
 .row-action svg { width: 16px; height: 16px; }
+.job-title-link { color: inherit; text-decoration: none; }
+.job-title-link:hover { color: var(--blue); text-decoration: underline; }
+.application-status-select { min-height: 32px; padding: 0 30px 0 12px; color: var(--blue-dark); background: var(--blue-soft); border: 1px solid transparent; border-radius: 999px; font-size: 0.72rem; font-weight: 720; cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%234354e8' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; transition: border-color 160ms ease, background-color 160ms ease; }
+.application-status-select:hover { border-color: var(--blue); }
+.application-status-select:focus-visible { outline: none; border-color: var(--blue); }
+.application-status-select:disabled { cursor: wait; opacity: 0.6; }
+.application-status-select.is-unset { color: var(--muted, #6b7280); background: var(--blue-soft); }
 .status-pill { display: inline-flex; align-items: center; min-height: 30px; padding: 0 10px; color: var(--blue-dark); background: var(--blue-soft); border-radius: 999px; font-size: 0.72rem; font-weight: 720; }
 .status-pill.follow-up-due { color: #ac4433; background: var(--coral-soft); }
 .status-pill.applied { color: #187c63; background: #eaf8f3; }

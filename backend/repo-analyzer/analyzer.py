@@ -25,6 +25,7 @@ unit testable without the SDK installed.
 from __future__ import annotations
 
 import sys as _sys, pathlib as _pathlib
+
 _sys.path.insert(0, str(_pathlib.Path(__file__).resolve().parents[1]))  # backend/
 
 import asyncio
@@ -78,7 +79,6 @@ what skills building it demonstrates.
 
 Categorise your findings into:
 - Hard skills: concrete tools, languages, libraries, databases, frameworks.
-- Core competencies: applied methodologies and engineering techniques.
 - Architectural components: the distinct functional systems and subsystems built.
 {_SHARED_RULES}
 Adhere strictly to the required output schema."""
@@ -284,7 +284,7 @@ async def analyze_files(
             )
             prompt = (
                 f"{preamble}"
-                f"<slice index=\"{index + 1}\" of=\"{len(chunks)}\">\n"
+                f'<slice index="{index + 1}" of="{len(chunks)}">\n'
                 f"{chunk_bundle}\n</slice>"
             )
             async with semaphore:

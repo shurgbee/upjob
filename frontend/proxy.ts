@@ -17,5 +17,8 @@ export const config = {
     "/api/resume/:path*",
     "/skills/:path*",
     "/api/skills/:path*",
+    "/api/gmail/:path*",
+    "/api/applications",
+    "/api/applications/:path*",
   ],
 };

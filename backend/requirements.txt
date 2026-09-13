@@ -1,5 +1,8 @@
 -e ./repo-analyzer
 -r ./simplify-scraper/requirements.txt
+-r ./reward-handler/requirements.txt
+-r ./gmail-agent/requirements.txt
+-r ./resume-tailor/requirements.txt
 fastapi>=0.115,<1
 psycopg[binary]>=3.2,<4
 uvicorn[standard]>=0.30,<1
