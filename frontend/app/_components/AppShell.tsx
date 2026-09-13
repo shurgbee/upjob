@@ -10,7 +10,7 @@ const navigation = [
   { label: "Jobs", href: "/home", icon: BriefcaseIcon },
   { label: "Resume", href: "/resume", icon: DocumentIcon },
   { label: "Rewards", href: "/shop", icon: GiftIcon },
-  { label: "Skills", href: "/home#skills", icon: SparkIcon },
+  { label: "Skills", href: "/skills", icon: SparkIcon },
 ];
 
 export function AppShell({ children, showGamification = true }: { children: React.ReactNode; showGamification?: boolean }) {

@@ -15,5 +15,7 @@ export const config = {
     "/shop/:path*",
     "/resume/:path*",
     "/api/resume/:path*",
+    "/skills/:path*",
+    "/api/skills/:path*",
   ],
 };
