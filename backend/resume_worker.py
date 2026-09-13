@@ -16,6 +16,7 @@ from google.genai.errors import APIError
 from pydantic import BaseModel, ConfigDict, Field
 from psycopg.types.json import Jsonb
 from resume_service import connect
+from skills_worker import claim_skill, process_skill, recover_expired_skills
 
 
 DEFAULT_RESUME_GEMINI_MODEL = "gemini-3.5-flash"
@@ -236,17 +237,22 @@ async def process(job):
 
 
 async def run():
-    print("Resume worker started", flush=True)
+    print("UpJob worker started", flush=True)
     while True:
         try:
             await recover_expired()
+            await recover_expired_skills()
             job = await claim()
             if job:
                 await process(job)
             else:
-                await asyncio.sleep(1)
+                skill_job = await claim_skill()
+                if skill_job:
+                    await process_skill(skill_job)
+                else:
+                    await asyncio.sleep(1)
         except Exception as exc:
-            print(f"Resume worker database unavailable ({type(exc).__name__}); retrying", flush=True)
+            print(f"UpJob worker database unavailable ({type(exc).__name__}); retrying", flush=True)
             await asyncio.sleep(5)
 
 

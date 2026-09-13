@@ -34,8 +34,9 @@ Scoring rules:
 - Passed_criteria and Failed_criteria together must cover every criterion exactly once.
 - Each criterion string must briefly name the criterion and cite the strongest relevant path(s).
 - A criterion passes only with implementation-level evidence, not a dependency declaration alone.
-- Actionable_Feedback identifies the most valuable next changes, especially tests, missing edge
-  cases, or implementations that would turn failed criteria into passed criteria.
+- Actionable_Feedback identifies 1–4 of the most valuable next changes, especially tests, missing
+  edge cases, or implementations that would turn failed criteria into passed criteria. Format each
+  change on its own line, prefixed with "- ", so clients can render it as an actionable list.
 """
 
 RESUME_INSTRUCTIONS = BASE_INSTRUCTIONS + """

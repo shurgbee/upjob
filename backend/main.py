@@ -185,6 +185,8 @@ app = FastAPI(
 
 from resume_service import router as resume_router
 app.include_router(resume_router)
+from skills_service import router as skills_router
+app.include_router(skills_router)
 
 _scraper_lock = asyncio.Lock()
 _scraper_state_file = BASE_DIR / ".simplify_scraper_state.json"
