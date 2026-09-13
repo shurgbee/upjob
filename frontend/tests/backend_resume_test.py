@@ -96,6 +96,36 @@ class ResumeAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(call.args[1], (user,))
             self.assertIn("WHERE user_id=%s", call.args[0])
 
+    async def test_retry_supersedes_failed_operation_after_replacement_is_queued(self):
+        user, failed, replacement = uuid4(), uuid4(), uuid4()
+        operation = {
+            "id": failed,
+            "kind": "scan",
+            "revision": None,
+            "payload": {"repository": "https://github.com/example/project"},
+        }
+        lookup_db, lookup_connection = database([operation])
+        update_db, update_connection = database([{}])
+
+        with (
+            patch.object(
+                service,
+                "connect",
+                side_effect=[lookup_connection(), update_connection()],
+            ),
+            patch.object(
+                service,
+                "create_operation",
+                AsyncMock(return_value={"id": replacement}),
+            ) as create_operation,
+        ):
+            result = await service.retry(service.RetryRequest(id=failed), user)
+
+        self.assertEqual(result, {"id": replacement})
+        create_operation.assert_awaited_once()
+        self.assertIn("status='superseded'", update_db.execute.call_args.args[0])
+        self.assertEqual(update_db.execute.call_args.args[1], (failed, user))
+
     async def test_old_compile_is_superseded_without_launching_container(self):
         _, connection = database([None])
         with patch.object(worker, "connect", connection), patch.object(worker, "compile_tex") as compile_tex:

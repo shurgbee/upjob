@@ -73,6 +73,7 @@ class OperationRequest(StrictModel):
     context: str = Field(default="", max_length=10000)
     project_id: UUID | None = None
     bullets: list[Bullet] = Field(default_factory=list, max_length=100)
+    previous_suggestions: list[str] = Field(default_factory=list, max_length=100)
 
 
 class RetryRequest(StrictModel):
@@ -171,4 +172,13 @@ async def retry(request: RetryRequest, user_id: Owner):
         row = await (await db.execute("SELECT * FROM resume_operations WHERE id=%s AND user_id=%s AND status='failed'", (request.id, user_id))).fetchone()
     if not row:
         raise HTTPException(404, "Failed operation not found.")
-    return await create_operation(OperationRequest(kind=row["kind"], revision=row["revision"], **row["payload"]), user_id)
+    result = await create_operation(OperationRequest(kind=row["kind"], revision=row["revision"], **row["payload"]), user_id)
+    # Keep the operation history for auditing, but replace the failed card in the
+    # workspace once its retry has been accepted.
+    async with await connect() as db:
+        await db.execute(
+            "UPDATE resume_operations SET status='superseded',finished_at=now() "
+            "WHERE id=%s AND user_id=%s AND status='failed'",
+            (request.id, user_id),
+        )
+    return result

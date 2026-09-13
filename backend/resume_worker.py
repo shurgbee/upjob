@@ -215,6 +215,14 @@ async def suggest(job: dict) -> dict:
         "suggestions with IDs new-1, new-2, new-3 and empty originals. "
     )
     prompt = json.dumps({"action": job["kind"], "bullets": payload.get("bullets", []), "evidence": evidence})
+    previous_suggestions = payload.get("previous_suggestions", [])
+    if previous_suggestions:
+        prompt += (
+            "\nThis is a regeneration request. Rewrite every bullet with materially different "
+            "wording and structure while preserving its supported facts. Do not repeat or lightly "
+            "paraphrase any of these previous suggestions: "
+            + json.dumps(previous_suggestions)
+        )
     model = os.getenv("RESUME_GEMINI_MODEL", DEFAULT_RESUME_GEMINI_MODEL).strip()
     client = genai.Client(api_key=key)
     try:

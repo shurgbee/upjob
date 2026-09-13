@@ -438,6 +438,10 @@
   border: 0;
   color: var(--muted);
 }
+.resume-regenerate {
+  justify-content: flex-start;
+  margin-top: 12px;
+}
 .resume-compile-error {
   padding: 16px;
   background: var(--coral-soft);

@@ -91,7 +91,7 @@
   grid-template-columns: minmax(260px, .78fr) minmax(0, 1.4fr);
   overflow: hidden;
   color: white;
-  background: var(--ink);
+  background: var(--night);
   border-radius: 28px;
   box-shadow: 0 24px 65px rgba(21,21,38,.16);
 }

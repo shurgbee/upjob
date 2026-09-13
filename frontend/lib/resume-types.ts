@@ -32,6 +32,7 @@ export type Operation = {
     bullets?: { id: string; text: string }[];
     project_id?: string;
     repository?: string;
+    previous_suggestions?: string[];
   };
   result: { suggestions?: Suggestion[] } | null;
   created_at: string;
