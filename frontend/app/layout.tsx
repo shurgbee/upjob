@@ -26,7 +26,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body>{children}</body>
+      <body>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(() => { try { const saved = localStorage.getItem("upjob-theme"); const theme = saved === "dark" || saved === "light" ? saved : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"; document.documentElement.dataset.theme = theme; document.documentElement.style.colorScheme = theme; } catch {} })();`,
+          }}
+        />
+        {children}
+      </body>
     </html>
   );
 }

@@ -22,6 +22,14 @@ export function BellIcon(props: IconProps) {
   return <IconBase {...props}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></IconBase>;
 }
 
+export function SunIcon(props: IconProps) {
+  return <IconBase {...props}><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></IconBase>;
+}
+
+export function MoonIcon(props: IconProps) {
+  return <IconBase {...props}><path d="M20.4 15.2A8.5 8.5 0 0 1 8.8 3.6 8.5 8.5 0 1 0 20.4 15.2Z" /></IconBase>;
+}
+
 export function CoinIcon(props: IconProps) {
   return <IconBase {...props}><circle cx="12" cy="12" r="8.5" /><path d="M14.7 8.5h-3.4a2 2 0 0 0 0 4h1.4a2 2 0 0 1 0 4H9.3M12 6.5v2M12 16.5v2" /></IconBase>;
 }

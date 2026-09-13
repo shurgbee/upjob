@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 export default function SkillsPage() {
   return (
     <AuthenticatedShell>
-      <AppShell>
+      <AppShell showGamification={false}>
         <SkillsWorkspace />
       </AppShell>
     </AuthenticatedShell>

@@ -8,5 +8,5 @@ export default async function HomePage() {
   await connection();
   const jobs = await getJobSpecs();
 
-  return <AuthenticatedShell><AppShell><Dashboard jobs={jobs} /></AppShell></AuthenticatedShell>;
+  return <AuthenticatedShell><AppShell showGamification={false}><Dashboard jobs={jobs} /></AppShell></AuthenticatedShell>;
 }

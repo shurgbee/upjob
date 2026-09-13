@@ -217,6 +217,17 @@
 .plan-state p { margin: 5px 0 0; color: var(--muted); font-size: .82rem; }
 .plan-error { justify-content: space-between; color: #8d3426; background: var(--coral-soft); border-color: #ffd4cc; }
 
+html[data-theme="dark"] .skills-alert button,
+html[data-theme="dark"] .skill-error button,
+html[data-theme="dark"] .plan-state button,
+html[data-theme="dark"] .skills-loading,
+html[data-theme="dark"] .skill-quest,
+html[data-theme="dark"] .plan-state { background: var(--surface); }
+html[data-theme="dark"] .quest-criteria { background: #232335; }
+html[data-theme="dark"] .quest-submit input { background: #232335; border-color: var(--line); }
+html[data-theme="dark"] .skill-evaluation { background: #232335; }
+html[data-theme="dark"] .skill-score { background: radial-gradient(circle closest-side, #232335 79%, transparent 80% 99%), conic-gradient(var(--blue) var(--score), #3c3d51 0); }
+
 @media (max-width: 980px) {
   .skill-quest { grid-template-columns: 58px 1fr 1fr; }
   .quest-heading { grid-column: 2 / -1; }
